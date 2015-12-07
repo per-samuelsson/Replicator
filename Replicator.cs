@@ -53,7 +53,7 @@ namespace Replicator
                 {
                     Db.Transact(() =>
                     {
-                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replication r WHERE DatabaseGuid = ?", _peerGuid.ToString()).First;
+                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.DatabaseGuid = ?", _peerGuid.ToString()).First;
                         if (repl == null)
                         {
                             repl = new Replication()
@@ -90,13 +90,13 @@ namespace Replicator
         {
             if (t.IsFaulted)
             {
-                Console.WriteLine("Replicator: {0}: Transaction {1}: Exception: {2}", _peerGuid, tran.CommitID(), t.Exception.ToString());
+                Console.WriteLine("Replicator: {0}: Transaction {1}: Exception: {2}", _peerGuid, tran.GetCommitID(), t.Exception.ToString());
                 Quit(t.Exception.Message);
                 return t;
             }
             if (t.IsCanceled)
             {
-                Console.WriteLine("Replicator: {0}: Transaction {1}: Cancelled", _peerGuid, tran.CommitID());
+                Console.WriteLine("Replicator: {0}: Transaction {1}: Cancelled", _peerGuid, tran.GetCommitID());
                 Quit("Cancelled");
                 return t;
             }
@@ -139,14 +139,15 @@ namespace Replicator
                     return;
                 }
 
-                if (tran.DatabaseGuid() != _peerGuid)
+                if (tran.GetDatabaseGuid() != _peerGuid)
                 {
                     // TODO: user level filtering
-                    _sender.SendStringAsync("TRAN!" + JsonConvert.SerializeObject(tran), _ct).ContinueWith((st) => HandleSentTransaction(st, tran));
+                    _sender.SendStringAsync("TRAN!" + JsonConvert.SerializeObject((MockLogTransaction)tran), _ct).ContinueWith((st) => HandleSentTransaction(st, tran));
                 }
             }
 
-            _reader.ReadAsync(_ct).ContinueWith(HandleOutboundTransaction);
+            if (!_ct.IsCancellationRequested)
+                _reader.ReadAsync(_ct).ContinueWith(HandleOutboundTransaction);
 
             return;
         }
@@ -165,26 +166,27 @@ namespace Replicator
                         return;
                     }
 
-                    ILogTransaction tran = JsonConvert.DeserializeObject<ILogTransaction>(message.Substring(5));
+                    MockLogTransaction tran = JsonConvert.DeserializeObject<MockLogTransaction>(message.Substring(5));
 
                     Db.Transact(() =>
                     {
-                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replication r WHERE DatabaseGuid = ?", _peerGuid.ToString()).First;
+                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE DatabaseGuid = ?", _peerGuid.ToString()).First;
                         if (repl == null)
                         {
                             repl = new Replication()
                             {
                                 DatabaseGuid = _peerGuid.ToString(),
-                                LastCommitID = tran.CommitID()
+                                LastCommitID = tran.GetCommitID()
                             };
                         }
                         else
                         {
-                            if (tran.CommitID() <= repl.LastCommitID)
+                            if (tran.GetCommitID() <= repl.LastCommitID)
                                 throw new Exception("commit ID regression");
-                            repl.LastCommitID = tran.CommitID();
+                            repl.LastCommitID = tran.GetCommitID();
                         }
-                        _applicator.Apply(tran);
+                        if (_applicator != null)
+                            _applicator.Apply(tran);
                     });
                     return;
                 }
@@ -202,13 +204,15 @@ namespace Replicator
                 if (message.StartsWith("GUID!"))
                 {
                     _peerGuid = Guid.Parse(message.Substring(5).Trim());
-                    _sender.SendStringAsync("LAST!" + LastCommitID, _ct).ContinueWith(HandleSendResult);
+                    var reply = "LAST!" + LastCommitID;
+                    _sender.SendStringAsync(reply, _ct).ContinueWith(HandleSendResult);
                     return;
                 }
 
                 if (message.StartsWith("LAST!"))
                 {
                     StartReplication(UInt64.Parse(message.Substring(5).Trim()));
+                    return;
                 }
             }
             catch (Exception e)
@@ -218,7 +222,9 @@ namespace Replicator
                 return;
             }
 
-            Quit("unknown command");
+            if (message.Length > 5)
+                message = message.Substring(0, 5);
+            Quit("Unknown command: \"" + message + "\"");
             return;
         }
 

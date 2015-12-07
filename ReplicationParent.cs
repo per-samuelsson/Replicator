@@ -56,10 +56,11 @@ namespace Replicator
         {
             if (disposing)
             {
-                if (_wsId != 0)
+                var wsId = _wsId;
+                _wsId = 0;
+                if (wsId != 0)
                 {
-                    _source.SinkDisposed(_wsId);
-                    _wsId = 0;
+                    _source.SinkDisposed(wsId);
                 }
             }
         }
@@ -108,12 +109,8 @@ namespace Replicator
                     };
                 }
                 UInt64 wsId = req.GetWebSocketId();
+                WebSocket ws = req.SendUpgrade(ProtocolString, null, null, null);
                 _sinks[wsId] = new Replicator(new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
-                Dictionary<String, String> headers = new Dictionary<String, String>() {
-                            { "WebSocketId", wsId.ToString() }
-                        };
-                Session s = new Session();
-                WebSocket ws = req.SendUpgrade(ProtocolString, null, headers, s);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)
@@ -149,7 +146,8 @@ namespace Replicator
             if (!_sinks.TryRemove(wsId, out sink))
             {
                 Console.WriteLine("sink wsID={0} not found", wsId);
-                throw new Exception("sink not found");
+                return;
+                // throw new Exception("sink not found");
             }
             Console.WriteLine("sink wsID={0} disposed", wsId);
         }

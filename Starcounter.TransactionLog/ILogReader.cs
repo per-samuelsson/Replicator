@@ -9,10 +9,8 @@ namespace Starcounter.TransactionLog
 {
     public interface ILogTransaction
     {
-        ulong CommitID();
-        Guid DatabaseGuid();
-        string Serialize();
-        void Deserialize(string data);
+        ulong GetCommitID();
+        Guid GetDatabaseGuid();
         // need something to alter or filter out parts of the transaction,
         // iterating on the classes/tables affected.
     }

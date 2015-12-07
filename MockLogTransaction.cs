@@ -10,24 +10,33 @@ namespace Replicator
 {
     class MockLogTransaction : ILogTransaction
     {
-        public ulong CommitID()
+        public MockLogTransaction(Guid dbGuid, ulong commitID)
         {
-            return 0;
+            CommitID = commitID;
+            DatabaseGuid = dbGuid;
         }
 
-        public Guid DatabaseGuid()
+        public ulong CommitID
         {
-            return new Guid();
+            get;
+            set;
         }
 
-        public string Serialize()
+        public Guid DatabaseGuid
         {
-            return JsonConvert.SerializeObject(this);
+            get;
+            set;
         }
 
-        public void Deserialize(string data)
+        public ulong GetCommitID()
         {
-
+            return CommitID;
         }
+
+        public Guid GetDatabaseGuid()
+        {
+            return DatabaseGuid;
+        }
+
     }
 }

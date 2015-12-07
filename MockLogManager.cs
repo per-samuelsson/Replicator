@@ -9,7 +9,7 @@ namespace Replicator
 {
     public class MockLogManager : ILogManager
     {
-        static Guid _selfGuid = Guid.NewGuid();
+        private Guid _selfGuid = Guid.NewGuid();
 
         public Guid GetDatabaseGuid()
         {
@@ -23,7 +23,7 @@ namespace Replicator
 
         public ILogReader OpenLog(string path, LogPosition position, LogPositionOptions position_options)
         {
-            return null;
+            return new MockLogReader(_selfGuid, position.commit_id);
         }
     }
 }
