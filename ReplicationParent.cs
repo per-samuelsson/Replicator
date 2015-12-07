@@ -22,28 +22,34 @@ namespace Replicator
 
         public Task SendStringAsync(string message, CancellationToken cancellationToken)
         {
-            Console.WriteLine("ReplicationParent: Send \"{0}\"", message);
-            WebSocket ws = new WebSocket(_wsId);
-            ws.Send(message);
+            (new Starcounter.DbSession()).RunSync(() => {
+                WebSocket ws = new WebSocket(_wsId);
+                ws.Send(message);
+            });
             return Task.FromResult(false);
         }
 
         public Task SendBinaryAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
         {
-            byte[] buf = buffer.Array;
-            if (buffer.Offset != 0)
+            (new Starcounter.DbSession()).RunSync(() =>
             {
-                buf = new byte[buffer.Count];
-                Array.Copy(buffer.Array, buffer.Offset, buf, 0, buffer.Count);
-            }
+                byte[] buf = buffer.Array;
+                if (buffer.Offset != 0)
+                {
+                    buf = new byte[buffer.Count];
+                    Array.Copy(buffer.Array, buffer.Offset, buf, 0, buffer.Count);
+                }
             (new WebSocket(_wsId)).Send(buf, buffer.Count);
+            });
             return Task.FromResult(false);
         }
 
         public Task CloseAsync(int closeStatus, string statusMessage, CancellationToken cancellationToken)
         {
-            Console.WriteLine("ReplicationParent: Close \"{0}\"", statusMessage);
-            (new WebSocket(_wsId)).Disconnect(statusMessage, (Starcounter.WebSocket.WebSocketCloseCodes)closeStatus);
+            (new Starcounter.DbSession()).RunSync(() =>
+            {
+                (new WebSocket(_wsId)).Disconnect(statusMessage, (Starcounter.WebSocket.WebSocketCloseCodes)closeStatus);
+            });
             return Task.FromResult(false);
         }
 
