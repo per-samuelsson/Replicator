@@ -7,14 +7,18 @@ using System.Threading;
 
 namespace Starcounter.TransactionLog
 {
-    public class ReadResult
+    public interface ILogTransaction
     {
-        public LogPosition position;
-        public int bytes_read; //more than count if buffer is insufficient
+        ulong CommitID();
+        Guid DatabaseGuid();
+        string Serialize();
+        void Deserialize(string data);
+        // need something to alter or filter out parts of the transaction,
+        // iterating on the classes/tables affected.
     }
 
     public interface ILogReader
     {
-        Task<ReadResult> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct);
+        Task<ILogTransaction> ReadAsync(CancellationToken ct);
     }
 }

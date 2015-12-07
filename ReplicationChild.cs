@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -20,6 +19,7 @@ namespace Replicator
 
         public Task SendStringAsync(string message, CancellationToken cancellationToken)
         {
+            Console.WriteLine("ReplicationChild: Send \"{0}\"", message);
             return _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)), WebSocketMessageType.Text, true, cancellationToken);
         }
 
@@ -33,6 +33,7 @@ namespace Replicator
 
         public Task CloseAsync(int closeStatus, string statusMessage, CancellationToken cancellationToken)
         {
+            Console.WriteLine("ReplicationChild: Close \"{0}\"", statusMessage);
             return _ws.CloseAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
         }
 
@@ -51,24 +52,21 @@ namespace Replicator
         }
     }
 
-    class ReplicationSink
+    class ReplicationChild
     {
         const int MinimumReconnectInterval = 1;
         static int MaximumReconnectInterval = 60 * 60;
-        private readonly Guid _dbid;
         private ILogManager _manager;
-        private ClientWebSocket _ws = new ClientWebSocket();
-        private Uri _source;
+        private ClientWebSocket _ws = null;
+        private Uri _sourceUri;
         private CancellationToken _ct;
         private int _reconnectInterval = MinimumReconnectInterval;
-        private ulong _lastCommitId = 0;
+        private Replicator _source = null;
 
-        public ReplicationSink(ILogManager manager, string sourceIp, int sourcePort, CancellationToken ct)
+        public ReplicationChild(ILogManager manager, string sourceIp, int sourcePort, CancellationToken ct)
         {
-            _dbid = new Guid(); // TODO: @bigwad get current database GUID from kernel
-            _lastCommitId = 0; // TODO: get last commit ID received from DB
             _manager = manager;
-            _source = new Uri("ws://" + sourceIp + ":" + sourcePort + "/replicator/" + _dbid);
+            _sourceUri = new Uri("ws://" + sourceIp + ":" + sourcePort + "/replicator");
             _ct = ct;
             Connect(null);
         }
@@ -83,34 +81,38 @@ namespace Replicator
             {
                 if (t.IsCanceled)
                 {
-                    Console.WriteLine("ReplicationSink.Connect: \"{0}\": Cancelled", _source);
+                    Console.WriteLine("ReplicationChild.Connect: \"{0}\": Cancelled", _sourceUri);
                     return;
                 }
                 if (t.IsFaulted)
                 {
-                    Console.WriteLine("ReplicationSink.Connect: \"{0}\": Exception {1}", _source, t.Exception);
+                    Console.WriteLine("ReplicationChild.Connect: \"{0}\": Exception {1}", _sourceUri, t.Exception);
                     return;
                 }
             }
-            _ws.ConnectAsync(_source, _ct).ContinueWith(HandleConnected);
+            if (_ct.IsCancellationRequested)
+                return;
+            _ws = new ClientWebSocket();
+            _ws.ConnectAsync(_sourceUri, _ct).ContinueWith(HandleConnected);
         }
 
         public void HandleConnected(Task t)
         {
             if (t.IsCanceled)
             {
-                Console.WriteLine("ReplicationSink.HandleConnected: \"{0}\": Cancelled", _source);
+                Console.WriteLine("ReplicationChild.HandleConnected: \"{0}\": Cancelled", _sourceUri);
                 return;
             }
             if (t.IsFaulted)
             {
                 TimeSpan span = TimeSpan.FromMilliseconds(1000 * ReconnectInterval);
                 ReconnectInterval = ReconnectInterval * 2;
-                Console.WriteLine("ReplicationSink.HandleConnected: \"{0}\": Reconnect in {1}: Exception {2}", _source, span, t.Exception);
+                Console.WriteLine("ReplicationChild.HandleConnected: \"{0}\": Reconnect in {1}: Exception {2}", _sourceUri, span, t.Exception);
                 Task.Delay(span, _ct).ContinueWith(Connect);
                 return;
             }
             ReconnectInterval = MinimumReconnectInterval;
+            _source = new Replicator(new DotNetWebSocketSender(_ws), _manager, _ct);
         }
 
         // How long to wait between connection attempts, in seconds.
