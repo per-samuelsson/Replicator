@@ -23,7 +23,7 @@ namespace Replicator
         static void Main()
         {
             _server = new ReplicationParent(_servermanager, _cts.Token);
-            _client = new ReplicationChild(_clientmanager, "anteater", StarcounterEnvironment.Default.UserHttpPort, _cts.Token);
+            _client = new ReplicationChild(_clientmanager, System.Environment.MachineName, StarcounterEnvironment.Default.UserHttpPort, _cts.Token);
         }
     }
 }

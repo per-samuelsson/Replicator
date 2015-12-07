@@ -23,7 +23,8 @@ namespace Replicator
         public Task SendStringAsync(string message, CancellationToken cancellationToken)
         {
             Console.WriteLine("ReplicationParent: Send \"{0}\"", message);
-            (new WebSocket(_wsId)).Send(message);
+            WebSocket ws = new WebSocket(_wsId);
+            ws.Send(message);
             return Task.FromResult(false);
         }
 
