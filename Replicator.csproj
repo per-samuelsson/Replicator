@@ -91,6 +91,9 @@
     <Compile Include="ReplicationParent.cs" />
   </ItemGroup>
   <ItemGroup>
+    <TypedJSON Include="Partials\AppName.json">
+      <Generator>MsBuild:Compile</Generator>
+    </TypedJSON>
     <TypedJSON Include="Partials\Home.json">
       <Generator>MsBuild:Compile</Generator>
     </TypedJSON>
@@ -103,6 +106,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="wwwroot\Replicator\Partials\AppIcon.html" />
     <Content Include="wwwroot\Replicator\Partials\Home.html" />
     <Content Include="wwwroot\Replicator\Partials\Master.html" />
     <Content Include="wwwroot\Replicator\Partials\Settings.html" />

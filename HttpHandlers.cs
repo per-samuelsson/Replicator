@@ -40,6 +40,12 @@ namespace Replicator {
 
                 return master;
             });
+
+            Handle.GET("/Replicator/app-name", () => {
+                return new AppName();
+            });
+
+            UriMapping.Map("/Replicator/app-name", UriMapping.MappingUriPrefix + "/app-name");
         }
     }
 }
