@@ -1,0 +1,20 @@
+﻿<template>
+    <template is="dom-bind">
+        <h1>Replicator Settings</h1>
+
+        <div class="form-group">
+            <label for="sourceIp">Source IP</label>
+            <input type="text" class="form-control" id="sourceIp" placeholder="Source IP" value="{{model.SourceIp$::change}}">
+        </div>
+
+        <div class="box-button">
+            <button class="btn btn-default" onclick="++this.value;" value="{{model.Save$::click}}">Save</button>
+        </div>
+
+        <hr />
+
+        <a href="/Replicator">← Replicator Home</a>
+
+        <dom-bind-notifier observed-object="{{model}}" path="model" deep></dom-bind-notifier>
+    </template>
+</template>

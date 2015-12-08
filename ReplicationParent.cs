@@ -98,7 +98,7 @@ namespace Replicator
         {
             _logmanager = manager;
             _ct = ct;
-            Handle.GET("/replicator", (Request req) => HandleConnect(req));
+            Handle.GET("/replicator/service", (Request req) => HandleConnect(req));
             Handle.WebSocketDisconnect(ProtocolString, HandleDisconnect);
             Handle.WebSocket(ProtocolString, HandleStringMessage);
             Handle.WebSocket(ProtocolString, HandleBinaryMessage);
