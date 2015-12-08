@@ -1,4 +1,5 @@
-﻿using Starcounter;
+﻿using System;
+using Starcounter;
 
 namespace Replicator {
     class HttpHandlers {
@@ -33,9 +34,11 @@ namespace Replicator {
 
             Handle.GET("/Replicator/settings", () => {
                 var master = (Master)Self.GET("/Replicator/master");
-
                 if (master.CurrentPartial as Settings == null) {
-                    master.CurrentPartial = new Settings();
+                    master.CurrentPartial = new Settings()
+                    {
+                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Guid.Empty.ToString()).First,
+                    };
                 }
 
                 return master;

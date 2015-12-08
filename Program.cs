@@ -12,19 +12,41 @@ using Starcounter.TransactionLog;
 
 namespace Replicator
 {
+
+    [Database]
+    public class Configuration
+    {
+        public string DatabaseGuid;
+        public string ParentUri;
+    }
+
     class Program
     {
-        static ReplicationChild _client = null;
+        static ILogManager _servermanager = new MockLogManager();
         static ReplicationParent _server = null;
         static CancellationTokenSource _cts = new CancellationTokenSource();
-        static ILogManager _servermanager = new MockLogManager();
-        static ILogManager _clientmanager = new MockLogManager();
+
+        static Guid GetDatabaseGuid()
+        {
+            return _servermanager.GetDatabaseGuid();
+        }
 
         static void Main()
         {
-            _server = new ReplicationParent(_servermanager, _cts.Token);
-            _client = new ReplicationChild(_clientmanager, System.Environment.MachineName, StarcounterEnvironment.Default.UserHttpPort, _cts.Token);
+            Db.Transact(() => {
+                Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Guid.Empty.ToString()).First;
+                if (conf == null)
+                {
+                    conf = new Configuration()
+                    {
+                        DatabaseGuid = Guid.Empty.ToString(),
+                        ParentUri = System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort,
+                    };
+                }
+            });
+
             new HttpHandlers();
+            _server = new ReplicationParent(_servermanager, _cts.Token);
         }
     }
 }

@@ -18,7 +18,7 @@ namespace Replicator
     [Database]
     public class Replication
     {
-        // The GUID of databases we receive from
+        // The GUID of the database
         public string DatabaseGuid;
         // and the last LogPosition we got from them
         public ulong Address;
@@ -188,14 +188,17 @@ namespace Replicator
             index = 0;
             while (index < tran.creates.Count)
             {
-                if (tran.creates[index].table == "Replicator.Replication")
+                if (tran.creates[index].table.StartsWith("Replicator."))
                 {
-                    for (int i = 0; i < tran.creates[index].columns.Length; i++)
+                    if (tran.creates[index].table == "Replicator.Replication")
                     {
-                        if (tran.creates[index].columns[i].name == "DatabaseGuid")
+                        for (int i = 0; i < tran.creates[index].columns.Length; i++)
                         {
-                            if ((string)tran.creates[index].columns[i].value == PeerGuidString)
-                                return false;
+                            if (tran.creates[index].columns[i].name == "DatabaseGuid")
+                            {
+                                if ((string)tran.creates[index].columns[i].value == PeerGuidString)
+                                    return false;
+                            }
                         }
                     }
                     tran.creates.RemoveAt(index);
@@ -209,14 +212,17 @@ namespace Replicator
             index = 0;
             while (index < tran.updates.Count)
             {
-                if (tran.updates[index].table == "Replicator.Replication")
+                if (tran.updates[index].table.StartsWith("Replicator."))
                 {
-                    for (int i = 0; i < tran.updates[index].columns.Length; i++)
+                    if (tran.creates[index].table == "Replicator.Replication")
                     {
-                        if (tran.updates[index].columns[i].name == "DatabaseGuid")
+                        for (int i = 0; i < tran.updates[index].columns.Length; i++)
                         {
-                            if ((string)tran.updates[index].columns[i].value == PeerGuidString)
-                                return false;
+                            if (tran.updates[index].columns[i].name == "DatabaseGuid")
+                            {
+                                if ((string)tran.updates[index].columns[i].value == PeerGuidString)
+                                    return false;
+                            }
                         }
                     }
                     tran.updates.RemoveAt(index);
@@ -230,7 +236,7 @@ namespace Replicator
             index = 0;
             while (index < tran.deletes.Count)
             {
-                if (tran.deletes[index].table == "Replicator.Replication")
+                if (tran.deletes[index].table.StartsWith("Replicator."))
                 {
                     tran.deletes.RemoveAt(index);
                 }
