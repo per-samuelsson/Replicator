@@ -77,7 +77,7 @@ namespace Replicator
         public ReplicationChild(ILogManager manager, string sourceIp, int sourcePort, CancellationToken ct)
         {
             _manager = manager;
-            _sourceUri = new Uri("ws://" + sourceIp + ":" + sourcePort + "/replicator");
+            _sourceUri = new Uri("ws://" + sourceIp + ":" + sourcePort + "/replicator/service");
             _ct = ct;
             _dbsess = new Starcounter.DbSession();
             Connect(null);
