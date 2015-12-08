@@ -6,8 +6,8 @@ using System.Threading.Tasks;
 
 namespace Starcounter.TransactionLog
 {
-    public interface ILogApplicator
+    interface ILogApplicator
     {
-        void Apply(ILogTransaction tran);
+        void Apply(TransactionData transaction_data);
     }
 }

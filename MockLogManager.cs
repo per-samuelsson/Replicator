@@ -21,9 +21,9 @@ namespace Replicator
             return null;
         }
 
-        public ILogReader OpenLog(string path, LogPosition position, LogPositionOptions position_options)
+        public ILogReader OpenLog(string path, LogPosition position)
         {
-            return new MockLogReader(_selfGuid, position.commit_id);
+            return new MockLogReader(_selfGuid, position);
         }
     }
 }

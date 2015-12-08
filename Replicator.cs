@@ -1,9 +1,10 @@
 ﻿using System;
-using Starcounter;
-using Starcounter.TransactionLog;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Starcounter;
+using Starcounter.TransactionLog;
 
 namespace Replicator
 {
@@ -19,8 +20,10 @@ namespace Replicator
     {
         // The GUID of databases we receive from
         public string DatabaseGuid;
-        // and the last commit ID we got from them
-        public ulong LastCommitID;
+        // and the last LogPosition we got from them
+        public ulong Address;
+        public ulong Signature;
+        public ulong CommitId;
     }
 
     public sealed class Replicator : IDisposable
@@ -29,43 +32,78 @@ namespace Replicator
         private ILogManager _logmanager;
         private CancellationToken _ct;
         private Guid _selfGuid;
-        private Guid _peerGuid = Guid.Empty;
+        private Guid _peerGuid;
+        private string _peerGuidString;
         private ILogReader _reader = null;
         private ILogApplicator _applicator = null;
-        private byte[] _buf = new byte[1024];
 
         public Replicator(IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
             _sender = sender;
             _logmanager = manager;
             _ct = ct;
+            Input = new ConcurrentQueue<string>();
+            Output = new ConcurrentQueue<string>();
             _selfGuid = manager.GetDatabaseGuid();
-            _sender.SendStringAsync("GUID!" + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
+            PeerGuid = Guid.Empty;
+            _sender.SendStringAsync("!GUID" + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
+            _applicator = new MockLogApplicator();
         }
 
-        // Last commit ID received from peer that was successfully committed.
-        public ulong LastCommitID
+        public ConcurrentQueue<string> Input
+        {
+            get;
+            private set;
+        }
+
+        public ConcurrentQueue<string> Output
+        {
+            get;
+            private set;
+        }
+
+        public Guid PeerGuid
         {
             get
             {
-                ulong id = 0;
+                return _peerGuid;
+            }
+
+            set
+            {
+                _peerGuid = value;
+                _peerGuidString = _peerGuid.ToString();
+            }
+        }
+
+        public string PeerGuidString
+        {
+            get
+            {
+                return _peerGuidString;
+            }
+        }
+
+        // Last LogPosition received from peer that was successfully committed.
+        public LogPosition LastLogPosition
+        {
+            get
+            {
+                LogPosition pos = new LogPosition();
                 if (IsPeerGuidSet)
                 {
                     Db.Transact(() =>
                     {
-                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.DatabaseGuid = ?", _peerGuid.ToString()).First;
-                        if (repl == null)
+                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.DatabaseGuid = ?", PeerGuidString).First;
+                        if (repl != null)
                         {
-                            repl = new Replication()
-                            {
-                                DatabaseGuid = _peerGuid.ToString(),
-                                LastCommitID = 0
-                            };
+                            pos.address = repl.Address;
+                            pos.signature = repl.Signature;
+                            pos.commit_id = repl.CommitId;
                         }
-                        id = repl.LastCommitID;
                     });
                 }
-                return id;
+                return pos;
             }
         }
 
@@ -73,76 +111,67 @@ namespace Replicator
         {
             if (t.IsFaulted)
             {
-                Console.WriteLine("Replicator: {0}: Exception: {1}", _peerGuid, t.Exception.ToString());
+                Console.WriteLine("Replicator: {0}: Exception: {1}", PeerGuidString, t.Exception.ToString());
                 Quit(t.Exception.Message);
                 return t;
             }
             if (t.IsCanceled)
             {
-                Console.WriteLine("Replicator: {0}: Cancelled", _peerGuid);
+                Console.WriteLine("Replicator: {0}: Cancelled", PeerGuidString);
                 Quit("Cancelled");
                 return t;
             }
             return t;
         }
 
-        private Task HandleSentTransaction(Task t, ILogTransaction tran)
+        private Task HandleSentTransaction(Task t, ReadResult tran)
         {
             if (t.IsFaulted)
             {
-                Console.WriteLine("Replicator: {0}: Transaction {1}: Exception: {2}", _peerGuid, tran.GetCommitID(), t.Exception.ToString());
+                Console.WriteLine("Replicator: {0}: Transaction {1}: Exception: {2}", PeerGuidString, tran.continuation_position, t.Exception.ToString());
                 Quit(t.Exception.Message);
                 return t;
             }
             if (t.IsCanceled)
             {
-                Console.WriteLine("Replicator: {0}: Transaction {1}: Cancelled", _peerGuid, tran.GetCommitID());
+                Console.WriteLine("Replicator: {0}: Transaction {1}: Cancelled", PeerGuidString, tran.continuation_position);
                 Quit("Cancelled");
                 return t;
             }
             return t;
         }
 
-        private void StartReplication(ulong commitID)
+        private void StartReplication(LogPosition pos)
         {
             if (!IsPeerGuidSet)
                 throw new InvalidOperationException("peer GUID not set");
-            _reader = _logmanager.OpenLog(ReplicationParent.TransactionLogDirectory, new LogPosition() { commit_id = commitID }, LogPositionOptions.ReadAfterPosition);
+            _reader = _logmanager.OpenLog(ReplicationParent.TransactionLogDirectory, pos);
             if (_reader != null)
                 HandleOutboundTransaction(null);
         }
 
-        private void HandleOutboundTransaction(Task<ILogTransaction> t)
+        private void HandleOutboundTransaction(Task<ReadResult> t)
         {
             if (t != null)
             {
                 if (t.IsCanceled)
                 {
-                    Console.WriteLine("Replicator: {0}: Cancelled", _peerGuid);
+                    Console.WriteLine("Replicator: {0}: Cancelled", PeerGuidString);
                     Quit("Cancelled");
                     return;
                 }
 
                 if (t.IsFaulted)
                 {
-                    Console.WriteLine("Replicator: {0}: {1}", _peerGuid, t.Exception.ToString());
+                    Console.WriteLine("Replicator: {0}: {1}", PeerGuidString, t.Exception.ToString());
                     Quit(t.Exception.Message);
                     return;
                 }
 
                 var tran = t.Result;
-                if (tran == null)
+                if (FilterTransaction(t.Result.transaction_data))
                 {
-                    const string msg = "ILogTransaction was null";
-                    Console.WriteLine("Replicator: {0}: {1}", msg);
-                    Quit(msg);
-                    return;
-                }
-
-                if (tran.GetDatabaseGuid() != _peerGuid)
-                {
-                    // TODO: user level filtering
-                    _sender.SendStringAsync("TRAN!" + JsonConvert.SerializeObject((MockLogTransaction)tran), _ct).ContinueWith((st) => HandleSentTransaction(st, tran));
+                    _sender.SendStringAsync(JsonConvert.SerializeObject(tran), _ct).ContinueWith((st) => HandleSentTransaction(st, tran));
                 }
             }
 
@@ -152,46 +181,117 @@ namespace Replicator
             return;
         }
 
+        private bool FilterTransaction(TransactionData tran)
+        {
+            int index;
+
+            index = 0;
+            while (index < tran.creates.Count)
+            {
+                if (tran.creates[index].table == "Replicator.Replication")
+                {
+                    for (int i = 0; i < tran.creates[index].columns.Length; i++)
+                    {
+                        if (tran.creates[index].columns[i].name == "DatabaseGuid")
+                        {
+                            if ((string)tran.creates[index].columns[i].value == PeerGuidString)
+                                return false;
+                        }
+                    }
+                    tran.creates.RemoveAt(index);
+                }
+                else
+                {
+                    index++;
+                }
+            }
+
+            index = 0;
+            while (index < tran.updates.Count)
+            {
+                if (tran.updates[index].table == "Replicator.Replication")
+                {
+                    for (int i = 0; i < tran.updates[index].columns.Length; i++)
+                    {
+                        if (tran.updates[index].columns[i].name == "DatabaseGuid")
+                        {
+                            if ((string)tran.updates[index].columns[i].value == PeerGuidString)
+                                return false;
+                        }
+                    }
+                    tran.updates.RemoveAt(index);
+                }
+                else
+                {
+                    index++;
+                }
+            }
+
+            index = 0;
+            while (index < tran.deletes.Count)
+            {
+                if (tran.deletes[index].table == "Replicator.Replication")
+                {
+                    tran.deletes.RemoveAt(index);
+                }
+                else
+                {
+                    index++;
+                }
+            }
+
+            if (tran.updates.Count > 0 || tran.creates.Count > 0 || tran.deletes.Count > 0)
+                return true;
+
+            // Transaction is empty, don't send it
+            return false;
+        }
+
         public void HandleStringMessage(string message)
         {
             try
             {
-                Console.WriteLine("Replicator {0}: Received from {1}: \"{2}\"", _selfGuid, _peerGuid, message);
+                Console.WriteLine("Replicator {0}: Received from {1}: \"{2}\"", _selfGuid, PeerGuidString, message);
 
-                if (message.StartsWith("TRAN!"))
+                if (message[0] != '!')
                 {
+                    // Transaction processing
                     if (!IsPeerGuidSet)
                     {
                         Quit("peer GUID not set");
                         return;
                     }
 
-                    MockLogTransaction tran = JsonConvert.DeserializeObject<MockLogTransaction>(message.Substring(5));
-
+                    ReadResult tran = JsonConvert.DeserializeObject<ReadResult>(message);
                     Db.Transact(() =>
                     {
-                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE DatabaseGuid = ?", _peerGuid.ToString()).First;
+                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE DatabaseGuid = ?", PeerGuidString).First;
                         if (repl == null)
                         {
                             repl = new Replication()
                             {
-                                DatabaseGuid = _peerGuid.ToString(),
-                                LastCommitID = tran.GetCommitID()
+                                DatabaseGuid = PeerGuidString,
+                                Address = tran.continuation_position.address,
+                                Signature = tran.continuation_position.signature,
+                                CommitId = tran.continuation_position.commit_id,
                             };
                         }
                         else
                         {
-                            if (tran.GetCommitID() <= repl.LastCommitID)
-                                throw new Exception("commit ID regression");
-                            repl.LastCommitID = tran.GetCommitID();
+                            // TODO: wait for @bigwad to export comparison for LogPosition
+                            // so we can make sure the commit ID is progressing
+                            repl.Address = tran.continuation_position.address;
+                            repl.Signature = tran.continuation_position.signature;
+                            repl.CommitId = tran.continuation_position.commit_id;
                         }
-                        if (_applicator != null)
-                            _applicator.Apply(tran);
+                        _applicator.Apply(tran.transaction_data);
                     });
                     return;
                 }
 
-                if (message.StartsWith("QUIT!"))
+                // Command processing
+
+                if (message.StartsWith("!QUIT"))
                 {
                     Console.WriteLine("Replicator: \"{0}\"", message);
                     _sender.CloseAsync(1000, null, _ct).ContinueWith((_) =>
@@ -201,17 +301,17 @@ namespace Replicator
                     return;
                 }
 
-                if (message.StartsWith("GUID!"))
+                if (message.StartsWith("!GUID"))
                 {
-                    _peerGuid = Guid.Parse(message.Substring(5).Trim());
-                    var reply = "LAST!" + LastCommitID;
+                    PeerGuid = Guid.Parse(message.Substring(5));
+                    var reply = "!LPOS" + JsonConvert.SerializeObject(LastLogPosition);
                     _sender.SendStringAsync(reply, _ct).ContinueWith(HandleSendResult);
                     return;
                 }
 
-                if (message.StartsWith("LAST!"))
+                if (message.StartsWith("!LPOS"))
                 {
-                    StartReplication(UInt64.Parse(message.Substring(5).Trim()));
+                    StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(5)));
                     return;
                 }
             }
@@ -222,15 +322,13 @@ namespace Replicator
                 return;
             }
 
-            if (message.Length > 5)
-                message = message.Substring(0, 5);
             Quit("Unknown command: \"" + message + "\"");
             return;
         }
 
         public void Quit(string error = "")
         {
-            _sender.SendStringAsync("QUIT!" + error, _ct).ContinueWith((t) =>
+            _sender.SendStringAsync("!QUIT" + error, _ct).ContinueWith((t) =>
             {
                 _sender.CloseAsync((error == "") ? 1000 : 4000, error, _ct).ContinueWith((_) => 
                 {
@@ -243,15 +341,15 @@ namespace Replicator
         {
             if (IsPeerGuidSet)
             {
-                Console.WriteLine("Replicator: {0} disconnected", _peerGuid);
-                _peerGuid = Guid.Empty;
+                Console.WriteLine("Replicator: {0} disconnected", PeerGuidString);
+                PeerGuid = Guid.Empty;
             }
             _sender.Dispose();
         }
 
         public bool IsPeerGuidSet
         {
-            get { return _peerGuid != Guid.Empty; }
+            get { return PeerGuid != Guid.Empty; }
         }
 
     }

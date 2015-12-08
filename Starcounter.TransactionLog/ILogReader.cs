@@ -7,16 +7,14 @@ using System.Threading;
 
 namespace Starcounter.TransactionLog
 {
-    public interface ILogTransaction
+    public struct ReadResult
     {
-        ulong GetCommitID();
-        Guid GetDatabaseGuid();
-        // need something to alter or filter out parts of the transaction,
-        // iterating on the classes/tables affected.
+        public LogPosition continuation_position;
+        public TransactionData transaction_data;
     }
 
     public interface ILogReader
     {
-        Task<ILogTransaction> ReadAsync(CancellationToken ct);
+        Task<ReadResult> ReadAsync(CancellationToken ct);
     }
 }

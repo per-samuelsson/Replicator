@@ -6,9 +6,10 @@ using System.Threading.Tasks;
 
 namespace Starcounter.TransactionLog
 {
-    public class LogPosition
+    public struct LogPosition
     {
+        public ulong address;
+        public ulong signature;
         public ulong commit_id;
-        public int log_file_number_hint;
     }
 }
