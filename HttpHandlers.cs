@@ -11,7 +11,11 @@ namespace Replicator {
                     return session.Data;
                 }
 
-                var master = new Master();
+                Master master = null;
+
+                Db.Scope(() => {
+                    master = new Master();
+                });
 
                 if (session == null) {
                     session = new Session(SessionOptions.PatchVersioning);
