@@ -114,30 +114,43 @@ namespace Replicator
             }
             if (_ct.IsCancellationRequested)
                 return;
-            Program.Status = "Connecting to \"" + _sourceUri.ToString() + "\"...";
+            Program.Status = "Connecting to " + _sourceUri.ToString();
             _ws = new ClientWebSocket();
             _ws.ConnectAsync(_sourceUri, _ct).ContinueWith(HandleConnected);
         }
 
         public void Reconnect(Exception e = null)
         {
+            string msg = null;
+            if (_source != null)
+            {
+                msg = _source.QuitMessage;
+                _source.Dispose();
+                _source = null;
+            }
+            if (e != null)
+            {
+                if (msg == null || msg == "")
+                {
+                    if (e.InnerException == null)
+                        msg = e.Message;
+                    else
+                        msg = e.InnerException.Message;
+                }
+                Console.WriteLine("ReplicationChild.Reconnect: \"{0}\": Exception {1}", _sourceUri, e);
+            }
+            if (msg == null)
+                msg = "";
+            if (msg != "")
+                msg = "\"" + msg + "\": ";
             if (_ct.IsCancellationRequested)
             {
-                if (e != null)
-                    Console.WriteLine("ReplicationChild: {0}", e);
+                Program.Status = _sourceUri.ToString() + ": " + msg + "Cancelled";
                 return;
             }
             TimeSpan span = TimeSpan.FromMilliseconds(1000 * ReconnectInterval);
+            Program.Status = _sourceUri.ToString() + ": " + msg + "Reconnect at " + (DateTime.Now + span);
             ReconnectInterval = ReconnectInterval * 2;
-            if (e == null)
-            {
-                Console.WriteLine("ReplicationChild.Reconnect: \"{0}\": Reconnect in {1}", _sourceUri, span);
-            }
-            else
-            {
-                Console.WriteLine("ReplicationChild.Reconnect: \"{0}\": Reconnect in {1}: Exception {2}", _sourceUri, span, e);
-            }
-            Program.Status = "Reconnecting to \"" + _sourceUri.ToString() + "\" at " + (DateTime.Now + span);
             Task.Delay(span, _ct).ContinueWith(Connect);
             return;
         }

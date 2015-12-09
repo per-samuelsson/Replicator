@@ -13,19 +13,31 @@
             </div><!-- /.col-lg-6 -->
         </div><!-- /.row -->
 
-        <div class="form-group">
-            <label for="parentUri">Parent URI</label>
-            <input type="text" class="form-control" id="parentUri" placeholder="Parent URI" value="{{model.ParentUri$::change}}">
-            <label for="reconnectMinimumWaitSeconds">Reconnect Minimum Wait Seconds</label>
-            <input type="text" class="form-control" id="reconnectMinimumWaitSeconds" placeholder="ReconnectMinimumWaitSeconds" value="{{model.ReconnectMinimumWaitSeconds$::change}}">
-            <label for="reconnectMaximumWaitSeconds">Reconnect Maximum Wait Seconds</label>
-            <input type="text" class="form-control" id="reconnectMaximumWaitSeconds" placeholder="ReconnectMaximumWaitSeconds" value="{{model.ReconnectMaximumWaitSeconds$::change}}">
-        </div>
+        <form class="form-horizontal">
+            <div class="form-group">
+                <label for="parentUri" class="col-sm-3 control-label">Parent URI</label>
+                <div class="col-sm-9">
+                    <input type="text" class="form-control" id="parentUri" placeholder="Parent URI" value="{{model.ParentUri$::change}}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="reconnectMinimumWaitSeconds" class="col-sm-3 control-label">Reconnect Minimum Wait Seconds</label>
+                <div class="col-sm-9">
+                    <input type="text" class="form-control" id="reconnectMinimumWaitSeconds" placeholder="{{model.ReconnectMinimumWaitSeconds}}" value="{{model.ReconnectMinimumWaitSeconds$::change}}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="reconnectMaximumWaitSeconds" class="col-sm-3 control-label">Reconnect Maximum Wait Seconds</label>
+                <div class="col-sm-9">
+                    <input type="text" class="form-control" id="reconnectMaximumWaitSeconds" placeholder="{{model.ReconnectMaximumWaitSeconds}}" value="{{model.ReconnectMaximumWaitSeconds$::change}}">
+                </div>
+            </div>
+        </form>
 
         <hr />
 
         <a href="/Replicator">← Replicator Home</a>
 
         <dom-bind-notifier observed-object="{{model}}" path="model" deep></dom-bind-notifier>
-    </template>
+</template>
 </template>

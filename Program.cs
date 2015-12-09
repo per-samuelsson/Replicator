@@ -134,13 +134,14 @@ namespace Replicator
             }
             set
             {
+                string status = value;
                 new DbSession().RunAsync(() =>
                 {
                     Db.Transact(() => {
-                        GetConfiguration().Status = value;
+                        GetConfiguration().Status = status;
                     });
                     Session.ForAll((s) => { s.CalculatePatchAndPushOnWebSocket(); });
-                });
+                }, 0);
             }
         }
 
