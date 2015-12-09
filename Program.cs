@@ -17,6 +17,7 @@ namespace Replicator
     {
         public string DatabaseGuid;
         public string ParentUri;
+        public string ParentGuid;
         public int ReconnectMinimumWaitSeconds;
         public int ReconnectMaximumWaitSeconds;
         public string Status;
@@ -48,6 +49,7 @@ namespace Replicator
                 {
                     DatabaseGuid = GetDatabaseGuid().ToString(),
                     ParentUri = System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort,
+                    ParentGuid = Guid.Empty.ToString(),
                     ReconnectMinimumWaitSeconds = 1,
                     ReconnectMaximumWaitSeconds = 60 * 60 * 24,
                     Status = "",
@@ -118,6 +120,24 @@ namespace Replicator
             {
                 Db.Transact(() => {
                     GetConfiguration().ParentUri = value;
+                });
+            }
+        }
+
+        static public string ParentGuid
+        {
+            get
+            {
+                string uri = "";
+                Db.Transact(() => {
+                    uri = GetConfiguration().ParentGuid;
+                });
+                return uri;
+            }
+            set
+            {
+                Db.Transact(() => {
+                    GetConfiguration().ParentGuid = value;
                 });
             }
         }

@@ -338,12 +338,17 @@ namespace Replicator
                     var peerGuid = Guid.Parse(message.Substring(6));
                     if (peerGuid == Guid.Empty)
                     {
-                        Quit("empty GUID");
+                        Quit("GUID is empty");
                         return;
                     }
                     if (peerGuid == _selfGuid)
                     {
-                        Quit("self GUID");
+                        Quit("GUID is my own");
+                        return;
+                    }
+                    if (peerGuid.ToString() == Program.ParentGuid)
+                    {
+                        Quit("GUID is parents");
                         return;
                     }
                     PeerGuid = peerGuid;

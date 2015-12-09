@@ -186,6 +186,7 @@ namespace Replicator
             }
             if (_source.IsPeerGuidSet)
             {
+                Program.ParentGuid = _source.PeerGuidString;
                 ReconnectInterval = _reconnectMinimum;
             }
 
