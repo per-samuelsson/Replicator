@@ -49,7 +49,7 @@ namespace Replicator
                 {
                     DatabaseGuid = GetDatabaseGuid().ToString(),
                     ParentUri = System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort,
-                    ParentGuid = Guid.Empty.ToString(),
+                    ParentGuid = "",
                     ReconnectMinimumWaitSeconds = 1,
                     ReconnectMaximumWaitSeconds = 60 * 60 * 24,
                     Status = "",
@@ -119,7 +119,9 @@ namespace Replicator
             set
             {
                 Db.Transact(() => {
-                    GetConfiguration().ParentUri = value;
+                    var conf = GetConfiguration();
+                    conf.ParentUri = value;
+                    conf.ParentGuid = "";
                 });
             }
         }
@@ -136,9 +138,13 @@ namespace Replicator
             }
             set
             {
-                Db.Transact(() => {
-                    GetConfiguration().ParentGuid = value;
-                });
+                new DbSession().RunAsync(() =>
+                {
+                    Db.Transact(() =>
+                    {
+                        GetConfiguration().ParentGuid = value;
+                    });
+                }, 0);
             }
         }
 
@@ -154,11 +160,10 @@ namespace Replicator
             }
             set
             {
-                string status = value;
                 new DbSession().RunAsync(() =>
                 {
                     Db.Transact(() => {
-                        GetConfiguration().Status = status;
+                        GetConfiguration().Status = value;
                     });
                     Session.ForAll((s) => { s.CalculatePatchAndPushOnWebSocket(); });
                 }, 0);

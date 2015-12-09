@@ -10,6 +10,7 @@ namespace Replicator {
         void Handle(Input.ParentUri Action)
         {
             this.Data.ParentUri = Action.Value;
+            this.Data.ParentGuid = "";
             this.Transaction.Commit();
         }
 
@@ -25,7 +26,8 @@ namespace Replicator {
             this.Transaction.Commit();
         }
 
-        void Handle(Input.ConnectNow Action) {
+        void Handle(Input.ConnectNow Action)
+        {
             Program.Connect();
         }
     }
