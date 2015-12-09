@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Starcounter.Internal;
 using Starcounter.TransactionLog;
 
 namespace Replicator
@@ -44,6 +45,11 @@ namespace Replicator
             return _ws.CloseAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
         }
 
+        public bool IsDisposed
+        {
+            get { return _disposed; }
+        }
+
         public void Dispose()
         {
             Dispose(true);
@@ -62,24 +68,32 @@ namespace Replicator
 
     class ReplicationChild
     {
-        const int MinimumReconnectInterval = 1;
-        static int MaximumReconnectInterval = 60 * 60;
         private ILogManager _manager;
         private ClientWebSocket _ws = null;
         private Uri _sourceUri;
         private CancellationToken _ct;
-        private int _reconnectInterval = MinimumReconnectInterval;
+        private int _reconnectInterval = Program.ReconnectMinimumWaitSeconds;
         private Replicator _source = null;
         private byte[] _rdbuf = new byte[1024];
         private int _rdlen = 0;
         private Starcounter.DbSession _dbsess = null;
+        private int _reconnectMinimum;
+        private int _reconnectMaximum;
 
-        public ReplicationChild(ILogManager manager, string sourceIp, int sourcePort, CancellationToken ct)
+        public ReplicationChild(ILogManager manager, string parentUri, CancellationToken ct)
         {
             _manager = manager;
-            _sourceUri = new Uri("ws://" + sourceIp + ":" + sourcePort + "/replicator/service");
+            if (parentUri == "")
+                parentUri = "ws://" + System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort + Program.ReplicatorServicePath;
+            if (parentUri.IndexOf("//") < 0)
+                parentUri = "ws://" + parentUri;
+            if (parentUri.IndexOf('/', parentUri.IndexOf("//") + 2) < 0)
+                parentUri = parentUri + Program.ReplicatorServicePath;
+            _sourceUri = new Uri(parentUri);
             _ct = ct;
             _dbsess = new Starcounter.DbSession();
+            _reconnectMinimum = Program.ReconnectMinimumWaitSeconds;
+            _reconnectMaximum = Program.ReconnectMaximumWaitSeconds;
             Connect(null);
         }
 
@@ -100,12 +114,19 @@ namespace Replicator
             }
             if (_ct.IsCancellationRequested)
                 return;
+            Program.Status = "Connecting to \"" + _sourceUri.ToString() + "\"...";
             _ws = new ClientWebSocket();
             _ws.ConnectAsync(_sourceUri, _ct).ContinueWith(HandleConnected);
         }
 
         public void Reconnect(Exception e = null)
         {
+            if (_ct.IsCancellationRequested)
+            {
+                if (e != null)
+                    Console.WriteLine("ReplicationChild: {0}", e);
+                return;
+            }
             TimeSpan span = TimeSpan.FromMilliseconds(1000 * ReconnectInterval);
             ReconnectInterval = ReconnectInterval * 2;
             if (e == null)
@@ -116,6 +137,7 @@ namespace Replicator
             {
                 Console.WriteLine("ReplicationChild.Reconnect: \"{0}\": Reconnect in {1}: Exception {2}", _sourceUri, span, e);
             }
+            Program.Status = "Reconnecting to \"" + _sourceUri.ToString() + "\" at " + (DateTime.Now + span);
             Task.Delay(span, _ct).ContinueWith(Connect);
             return;
         }
@@ -130,8 +152,9 @@ namespace Replicator
             if (t.IsFaulted)
             {
                 Reconnect(t.Exception);
+                return;
             }
-            ReconnectInterval = MinimumReconnectInterval;
+            Program.Status = "Connected to " + _sourceUri.ToString();
             _source = new Replicator(new DotNetWebSocketSender(_ws), _manager, _ct);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
@@ -148,10 +171,34 @@ namespace Replicator
                 Reconnect(t.Exception);
                 return;
             }
+            if (_source.IsPeerGuidSet)
+            {
+                ReconnectInterval = _reconnectMinimum;
+            }
 
             WebSocketReceiveResult wsrr = t.Result;
             _rdlen += wsrr.Count;
-            if (!wsrr.EndOfMessage)
+
+            if (wsrr.EndOfMessage)
+            {
+                switch (wsrr.MessageType)
+                {
+                    case WebSocketMessageType.Text:
+                        var message = Encoding.UTF8.GetString(_rdbuf, 0, _rdlen);
+                        _dbsess.RunSync(() =>
+                        {
+                            _source.HandleStringMessage(message);
+                        });
+                        break;
+                    case WebSocketMessageType.Binary:
+                        break;
+                    case WebSocketMessageType.Close:
+                        break;
+                }
+                _rdlen = 0;
+            }
+
+            try
             {
                 if (_rdlen + 1024 > _rdbuf.Length)
                 {
@@ -160,27 +207,11 @@ namespace Replicator
                     _rdbuf = newbuf;
                 }
                 _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf, _rdlen, _rdbuf.Length - _rdlen), _ct).ContinueWith(HandleReceive);
-                return;
             }
-
-            switch (wsrr.MessageType)
+            catch (Exception e)
             {
-                case WebSocketMessageType.Text:
-                    var message = Encoding.UTF8.GetString(_rdbuf, 0, _rdlen);
-                    _rdlen = 0;
-                    _dbsess.RunSync(() =>
-                    {
-                        _source.HandleStringMessage(message);
-                    });
-                    break;
-                case WebSocketMessageType.Binary:
-                    break;
-                case WebSocketMessageType.Close:
-                    break;
+                Reconnect(e);
             }
-
-            _rdlen = 0;
-            _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 
         // How long to wait between connection attempts, in seconds.
@@ -192,10 +223,10 @@ namespace Replicator
             }
             set
             {
-                if (value < MinimumReconnectInterval)
-                    value = MinimumReconnectInterval;
-                if (value > MaximumReconnectInterval)
-                    value = MaximumReconnectInterval;
+                if (value < _reconnectMinimum)
+                    value = _reconnectMinimum;
+                if (value > _reconnectMaximum)
+                    value = _reconnectMaximum;
                 _reconnectInterval = value;
             }
         }

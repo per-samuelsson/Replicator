@@ -19,9 +19,9 @@ namespace Replicator
             _position = position;
         }
 
-        public Task<ReadResult> ReadAsync(CancellationToken ct)
+        public Task<LogReadResult> ReadAsync(CancellationToken ct)
         {
-            var t = new Task<ReadResult>(() =>
+            var t = new Task<LogReadResult>(() =>
             {
                 Task.Delay(1000).Wait();
                 _position.commit_id++;
@@ -45,7 +45,7 @@ namespace Replicator
                     columns = update_columns,
                 });
 
-                return new ReadResult() {
+                return new LogReadResult() {
                     continuation_position = _position,
                     transaction_data = new TransactionData()
                     {

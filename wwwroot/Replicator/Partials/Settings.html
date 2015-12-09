@@ -2,13 +2,24 @@
     <template is="dom-bind">
         <h1>Replicator Settings</h1>
 
-        <div class="form-group">
-            <label for="sourceIp">Source IP</label>
-            <input type="text" class="form-control" id="sourceIp" placeholder="Source IP" value="{{model.SourceIp$::change}}">
-        </div>
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="input-group">
+                    <span class="input-group-btn">
+                        <button class="btn btn-default" type="button" onclick="++this.value;" value="{{model.ConnectNow$::click}}">Connect Now</button>
+                    </span>
+                    <input type="text" readonly class="form-control" placeholder="{{model.Status}}" style="border: 1px solid lightgray; margin-left: 10px; padding-left: 10px">
+                </div><!-- /input-group -->
+            </div><!-- /.col-lg-6 -->
+        </div><!-- /.row -->
 
-        <div class="box-button">
-            <button class="btn btn-default" onclick="++this.value;" value="{{model.Save$::click}}">Save</button>
+        <div class="form-group">
+            <label for="parentUri">Parent URI</label>
+            <input type="text" class="form-control" id="parentUri" placeholder="Parent URI" value="{{model.ParentUri$::change}}">
+            <label for="reconnectMinimumWaitSeconds">Reconnect Minimum Wait Seconds</label>
+            <input type="text" class="form-control" id="reconnectMinimumWaitSeconds" placeholder="ReconnectMinimumWaitSeconds" value="{{model.ReconnectMinimumWaitSeconds$::change}}">
+            <label for="reconnectMaximumWaitSeconds">Reconnect Maximum Wait Seconds</label>
+            <input type="text" class="form-control" id="reconnectMaximumWaitSeconds" placeholder="ReconnectMaximumWaitSeconds" value="{{model.ReconnectMaximumWaitSeconds$::change}}">
         </div>
 
         <hr />

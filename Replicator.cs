@@ -44,9 +44,9 @@ namespace Replicator
             _ct = ct;
             Input = new ConcurrentQueue<string>();
             Output = new ConcurrentQueue<string>();
-            _selfGuid = manager.GetDatabaseGuid();
+            _selfGuid = Program.GetDatabaseGuid();
             PeerGuid = Guid.Empty;
-            _sender.SendStringAsync("!GUID" + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
+            _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
             _applicator = new MockLogApplicator();
         }
 
@@ -82,6 +82,32 @@ namespace Replicator
             {
                 return _peerGuidString;
             }
+        }
+
+        public string QuitMessage
+        {
+            get;
+            private set;
+        }
+
+        public bool IsClosed
+        {
+            get
+            {
+                return IsDisposed || QuitMessage != null;
+            }
+        }
+
+
+        public bool IsDisposed
+        {
+            get;
+            private set;
+        }
+
+        public bool IsPeerGuidSet
+        {
+            get { return PeerGuid != Guid.Empty; }
         }
 
         // Last LogPosition received from peer that was successfully committed.
@@ -124,7 +150,7 @@ namespace Replicator
             return t;
         }
 
-        private Task HandleSentTransaction(Task t, ReadResult tran)
+        private Task HandleSentTransaction(Task t, LogReadResult tran)
         {
             if (t.IsFaulted)
             {
@@ -150,7 +176,7 @@ namespace Replicator
                 HandleOutboundTransaction(null);
         }
 
-        private void HandleOutboundTransaction(Task<ReadResult> t)
+        private void HandleOutboundTransaction(Task<LogReadResult> t)
         {
             if (t != null)
             {
@@ -268,7 +294,7 @@ namespace Replicator
                         return;
                     }
 
-                    ReadResult tran = JsonConvert.DeserializeObject<ReadResult>(message);
+                    LogReadResult tran = JsonConvert.DeserializeObject<LogReadResult>(message);
                     Db.Transact(() =>
                     {
                         Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE DatabaseGuid = ?", PeerGuidString).First;
@@ -299,7 +325,7 @@ namespace Replicator
 
                 if (message.StartsWith("!QUIT"))
                 {
-                    Console.WriteLine("Replicator: \"{0}\"", message);
+                    QuitMessage = message.Substring(5).Trim();
                     _sender.CloseAsync(1000, null, _ct).ContinueWith((_) =>
                     {
                         Dispose();
@@ -307,17 +333,27 @@ namespace Replicator
                     return;
                 }
 
-                if (message.StartsWith("!GUID"))
+                if (message.StartsWith("!GUID "))
                 {
-                    PeerGuid = Guid.Parse(message.Substring(5));
-                    var reply = "!LPOS" + JsonConvert.SerializeObject(LastLogPosition);
+                    var peerGuid = Guid.Parse(message.Substring(6));
+                    if (peerGuid == Guid.Empty)
+                    {
+                        Quit("empty GUID");
+                        return;
+                    }
+                    if (peerGuid == _selfGuid)
+                    {
+                        Quit("self GUID");
+                        return;
+                    }
+                    var reply = "!LPOS " + JsonConvert.SerializeObject(LastLogPosition);
                     _sender.SendStringAsync(reply, _ct).ContinueWith(HandleSendResult);
                     return;
                 }
 
-                if (message.StartsWith("!LPOS"))
+                if (message.StartsWith("!LPOS "))
                 {
-                    StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(5)));
+                    StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(6)));
                     return;
                 }
             }
@@ -334,7 +370,7 @@ namespace Replicator
 
         public void Quit(string error = "")
         {
-            _sender.SendStringAsync("!QUIT" + error, _ct).ContinueWith((t) =>
+            _sender.SendStringAsync("!QUIT " + error, _ct).ContinueWith((t) =>
             {
                 _sender.CloseAsync((error == "") ? 1000 : 4000, error, _ct).ContinueWith((_) => 
                 {
@@ -345,6 +381,9 @@ namespace Replicator
 
         public void Dispose()
         {
+            if (IsDisposed)
+                return;
+            IsDisposed = true;
             if (IsPeerGuidSet)
             {
                 Console.WriteLine("Replicator: {0} disconnected", PeerGuidString);
@@ -352,11 +391,5 @@ namespace Replicator
             }
             _sender.Dispose();
         }
-
-        public bool IsPeerGuidSet
-        {
-            get { return PeerGuid != Guid.Empty; }
-        }
-
     }
 }

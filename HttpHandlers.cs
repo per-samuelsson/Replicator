@@ -26,7 +26,10 @@ namespace Replicator {
                 var master = (Master)Self.GET("/Replicator/master");
 
                 if (master.CurrentPartial as Home == null) {
-                    master.CurrentPartial = new Home();
+                    master.CurrentPartial = new Home()
+                    {
+                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Program.GetDatabaseGuid().ToString()).First,
+                    };
                 }
 
                 return master;
@@ -37,7 +40,7 @@ namespace Replicator {
                 if (master.CurrentPartial as Settings == null) {
                     master.CurrentPartial = new Settings()
                     {
-                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Guid.Empty.ToString()).First,
+                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Program.GetDatabaseGuid().ToString()).First,
                     };
                 }
 

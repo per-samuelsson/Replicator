@@ -75,7 +75,6 @@ namespace Replicator
 
     public class ReplicationParent
     {
-        const string ProtocolString = "sc-replicator";
         private ConcurrentDictionary<UInt64, Replicator> _sinks = new ConcurrentDictionary<UInt64, Replicator>();
         private string _logdirectory = TransactionLogDirectory;
         private ILogManager _logmanager;
@@ -98,10 +97,11 @@ namespace Replicator
         {
             _logmanager = manager;
             _ct = ct;
-            Handle.GET("/replicator/service", (Request req) => HandleConnect(req));
-            Handle.WebSocketDisconnect(ProtocolString, HandleDisconnect);
-            Handle.WebSocket(ProtocolString, HandleStringMessage);
-            Handle.WebSocket(ProtocolString, HandleBinaryMessage);
+            
+            Handle.GET(Program.ReplicatorServicePath, (Request req) => HandleConnect(req));
+            Handle.WebSocketDisconnect(Program.ReplicatorWebsocketProtocol, HandleDisconnect);
+            Handle.WebSocket(Program.ReplicatorWebsocketProtocol, HandleStringMessage);
+            Handle.WebSocket(Program.ReplicatorWebsocketProtocol, HandleBinaryMessage);
         }
 
         private Response HandleConnect(Request req)
@@ -116,7 +116,7 @@ namespace Replicator
                     };
                 }
                 UInt64 wsId = req.GetWebSocketId();
-                WebSocket ws = req.SendUpgrade(ProtocolString, null, null, null);
+                WebSocket ws = req.SendUpgrade(Program.ReplicatorWebsocketProtocol, null, null, null);
                 _sinks[wsId] = new Replicator(new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
                 return HandlerStatus.Handled;
             }

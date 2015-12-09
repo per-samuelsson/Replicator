@@ -7,7 +7,7 @@ using System.Threading;
 
 namespace Starcounter.TransactionLog
 {
-    public struct ReadResult
+    public struct LogReadResult
     {
         public LogPosition continuation_position;
         public TransactionData transaction_data;
@@ -15,6 +15,6 @@ namespace Starcounter.TransactionLog
 
     public interface ILogReader
     {
-        Task<ReadResult> ReadAsync(CancellationToken ct);
+        Task<LogReadResult> ReadAsync(CancellationToken ct);
     }
 }

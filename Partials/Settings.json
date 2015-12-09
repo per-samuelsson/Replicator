@@ -1,5 +1,9 @@
 {
-    "Html": "/Replicator/Partials/Settings.html",
-    "SourceIp$": "",
-    "Save$": 0
+  "Html": "/Replicator/Partials/Settings.html",
+  "DatabaseGuid":  "",
+  "ParentUri$": "",
+  "ReconnectMinimumWaitSeconds$": 0,
+  "ReconnectMaximumWaitSeconds$": 0,
+  "Status": "",
+  "ConnectNow$": 0
 }
