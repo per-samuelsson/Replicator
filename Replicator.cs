@@ -346,6 +346,7 @@ namespace Replicator
                         Quit("self GUID");
                         return;
                     }
+                    PeerGuid = peerGuid;
                     var reply = "!LPOS " + JsonConvert.SerializeObject(LastLogPosition);
                     _sender.SendStringAsync(reply, _ct).ContinueWith(HandleSendResult);
                     return;
