@@ -22,6 +22,7 @@ src/Starcounter.Internal/Error.cs
 src/_NCrunch_Level1
 src/packages
 .nuget
+packages
 
 # Generated error code files
 src/Starcounter.ErrorCodes/ErrorCodeCompiler/scerrcc.exe
