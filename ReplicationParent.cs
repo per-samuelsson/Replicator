@@ -13,43 +13,44 @@ namespace Replicator
     {
         private ReplicationParent _source;
         private ulong _wsId;
+        private WebSocket _ws;
 
         public StarcounterWebSocketSender(ReplicationParent source, ulong wsId)
         {
             _source = source;
             _wsId = wsId;
+            _ws = new WebSocket(wsId);
         }
 
+        public WebSocket Socket
+        {
+            get { return _ws; }
+        }
+
+        // Must run on a SC thread
         public Task SendStringAsync(string message, CancellationToken cancellationToken)
         {
-            (new Starcounter.DbSession()).RunSync(() => {
-                WebSocket ws = new WebSocket(_wsId);
-                ws.Send(message);
-            });
+            Socket.Send(message);
             return Task.FromResult(false);
         }
 
+        // Must run on a SC thread
         public Task SendBinaryAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
         {
-            (new Starcounter.DbSession()).RunSync(() =>
+            byte[] buf = buffer.Array;
+            if (buffer.Offset != 0)
             {
-                byte[] buf = buffer.Array;
-                if (buffer.Offset != 0)
-                {
-                    buf = new byte[buffer.Count];
-                    Array.Copy(buffer.Array, buffer.Offset, buf, 0, buffer.Count);
-                }
-            (new WebSocket(_wsId)).Send(buf, buffer.Count);
-            });
+                buf = new byte[buffer.Count];
+                Array.Copy(buffer.Array, buffer.Offset, buf, 0, buffer.Count);
+            }
+            Socket.Send(buf, buffer.Count);
             return Task.FromResult(false);
         }
 
+        // Must run on a SC thread
         public Task CloseAsync(int closeStatus, string statusMessage, CancellationToken cancellationToken)
         {
-            (new Starcounter.DbSession()).RunSync(() =>
-            {
-                (new WebSocket(_wsId)).Disconnect(statusMessage, (Starcounter.WebSocket.WebSocketCloseCodes)closeStatus);
-            });
+            Socket.Disconnect(statusMessage, (Starcounter.WebSocket.WebSocketCloseCodes)closeStatus);
             return Task.FromResult(false);
         }
 
@@ -75,7 +76,8 @@ namespace Replicator
 
     public class ReplicationParent
     {
-        private ConcurrentDictionary<UInt64, Replicator> _sinks = new ConcurrentDictionary<UInt64, Replicator>();
+        private DbSession _dbsess;
+        private ConcurrentDictionary<UInt64, Replicator> _children = new ConcurrentDictionary<UInt64, Replicator>();
         private string _logdirectory = TransactionLogDirectory;
         private ILogManager _logmanager;
         private CancellationToken _ct;
@@ -97,7 +99,7 @@ namespace Replicator
         {
             _logmanager = manager;
             _ct = ct;
-            
+            _dbsess = new DbSession();
             Handle.GET(Program.ReplicatorServicePath, (Request req) => HandleConnect(req));
             Handle.WebSocketDisconnect(Program.ReplicatorWebsocketProtocol, HandleDisconnect);
             Handle.WebSocket(Program.ReplicatorWebsocketProtocol, HandleStringMessage);
@@ -117,7 +119,7 @@ namespace Replicator
                 }
                 UInt64 wsId = req.GetWebSocketId();
                 WebSocket ws = req.SendUpgrade(Program.ReplicatorWebsocketProtocol, null, null, null);
-                _sinks[wsId] = new Replicator(new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
+                _children[wsId] = new Replicator(_dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)
@@ -133,14 +135,14 @@ namespace Replicator
         private void HandleDisconnect(WebSocket ws)
         {
             Replicator sink;
-            if (_sinks.TryRemove(ws.ToUInt64(), out sink))
+            if (_children.TryRemove(ws.ToUInt64(), out sink))
                 sink.Dispose();
         }
 
         private void DisconnectSink(string error, WebSocket ws)
         {
             Replicator sink;
-            if (_sinks.TryGetValue(ws.ToUInt64(), out sink))
+            if (_children.TryGetValue(ws.ToUInt64(), out sink))
             {
                 sink.Quit(error);
                 return;
@@ -150,7 +152,7 @@ namespace Replicator
         public void SinkDisposed(ulong wsId)
         {
             Replicator sink;
-            if (!_sinks.TryRemove(wsId, out sink))
+            if (!_children.TryRemove(wsId, out sink))
             {
                 Console.WriteLine("sink wsID={0} not found", wsId);
                 return;
@@ -163,10 +165,11 @@ namespace Replicator
         {
             try
             {
-                Replicator sink;
-                if (_sinks.TryGetValue(ws.ToUInt64(), out sink))
+                Replicator child;
+                if (_children.TryGetValue(ws.ToUInt64(), out child))
                 {
-                    sink.HandleStringMessage(data);
+                    child.Input.Enqueue(data);
+                    child.ProcessInput();
                     return;
                 }
             }

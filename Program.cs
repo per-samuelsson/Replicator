@@ -36,8 +36,14 @@ namespace Replicator
 
         static public Guid GetDatabaseGuid()
         {
-            // TODO: wait for @bigwad to export proper db guid
-            return _selfGuid;
+            // generate a fake database GUID until @bigwad exports the kernel API
+            return new Guid(
+                System.Security.Cryptography.MD5.Create().ComputeHash(
+                    System.Text.Encoding.ASCII.GetBytes(
+                        System.Environment.MachineName + "/" + StarcounterEnvironment.DatabaseNameLower
+                        )
+                    )
+                );
         }
 
         static private Configuration GetConfiguration()

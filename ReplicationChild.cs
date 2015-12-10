@@ -21,28 +21,41 @@ namespace Replicator
 
         public Task SendStringAsync(string message, CancellationToken cancellationToken)
         {
-            if (_disposed)
-                return Task.FromResult(false);
-            Console.WriteLine("ReplicationChild: Send \"{0}\"", message);
-            return _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)), WebSocketMessageType.Text, true, cancellationToken);
+            if (!_disposed)
+            {
+                if (_ws.State == WebSocketState.Open)
+                {
+                    return _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)), WebSocketMessageType.Text, true, cancellationToken);
+                }
+            }
+            return Task.FromResult(false);
         }
 
         public Task SendBinaryAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
         {
-            if (_disposed)
-                return Task.FromResult(false);
-            // make a copy of buffer since this really is async (as opposed to SC websockets)
-            var buf = new byte[buffer.Count];
-            Array.Copy(buffer.Array, buffer.Offset, buf, 0, buffer.Count);
-            return _ws.SendAsync(new ArraySegment<byte>(buf), WebSocketMessageType.Binary, true, cancellationToken);
+            if (!_disposed)
+            {
+                if (_ws.State == WebSocketState.Open)
+                {
+                    // make a copy of buffer since this really is async (as opposed to SC websockets)
+                    var buf = new byte[buffer.Count];
+                    Array.Copy(buffer.Array, buffer.Offset, buf, 0, buffer.Count);
+                    return _ws.SendAsync(new ArraySegment<byte>(buf), WebSocketMessageType.Binary, true, cancellationToken);
+                }
+            }
+            return Task.FromResult(false);
         }
 
         public Task CloseAsync(int closeStatus, string statusMessage, CancellationToken cancellationToken)
         {
-            if (_disposed)
-                return Task.FromResult(false);
-            Console.WriteLine("ReplicationChild: Close \"{0}\"", statusMessage);
-            return _ws.CloseAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
+            if (!_disposed)
+            {
+                if (_ws.State == WebSocketState.Open)
+                {
+                    return _ws.CloseAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
+                }
+            }
+            return Task.FromResult(false);
         }
 
         public bool IsDisposed
@@ -168,7 +181,7 @@ namespace Replicator
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new Replicator(new DotNetWebSocketSender(_ws), _manager, _ct);
+            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 
@@ -199,10 +212,8 @@ namespace Replicator
                 {
                     case WebSocketMessageType.Text:
                         var message = Encoding.UTF8.GetString(_rdbuf, 0, _rdlen);
-                        _dbsess.RunSync(() =>
-                        {
-                            _source.HandleStringMessage(message);
-                        });
+                        _source.Input.Enqueue(message);
+                        _source.HandleInput();
                         break;
                     case WebSocketMessageType.Binary:
                         break;

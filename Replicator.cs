@@ -10,6 +10,7 @@ namespace Replicator
 {
     public interface IWebSocketSender : IDisposable
     {
+        // All of these ,ust be called from a SC thread
         Task SendStringAsync(string message, CancellationToken cancellationToken);
         Task SendBinaryAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken);
         Task CloseAsync(int closeStatus, string statusMessage, CancellationToken cancellationToken);
@@ -28,6 +29,7 @@ namespace Replicator
 
     public sealed class Replicator : IDisposable
     {
+        private DbSession _dbsess;
         private IWebSocketSender _sender;
         private ILogManager _logmanager;
         private CancellationToken _ct;
@@ -36,30 +38,56 @@ namespace Replicator
         private string _peerGuidString;
         private ILogReader _reader = null;
         private ILogApplicator _applicator = null;
+        private SemaphoreSlim _inputSem = new SemaphoreSlim(1);
+        private ConcurrentQueue<string> _input = new ConcurrentQueue<string>();
+        private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
+        private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
 
-        public Replicator(IWebSocketSender sender, ILogManager manager, CancellationToken ct)
+        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
+            _dbsess = dbsess;
             _sender = sender;
             _logmanager = manager;
             _ct = ct;
-            Input = new ConcurrentQueue<string>();
-            Output = new ConcurrentQueue<string>();
             _selfGuid = Program.GetDatabaseGuid();
             PeerGuid = Guid.Empty;
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
             _applicator = new MockLogApplicator();
         }
 
-        public ConcurrentQueue<string> Input
+        // Must run in a SC thread
+        public void ProcessInput()
         {
-            get;
-            private set;
+            if (_inputSem.Wait(0, _ct))
+            {
+                try
+                {
+                    string message;
+                    while (Input.TryDequeue(out message))
+                        ProcessStringMessage(message);
+                }
+                finally
+                {
+                    _inputSem.Release();
+                }
+            }
         }
 
-        public ConcurrentQueue<string> Output
+        // May run in any thread
+        public void HandleInput()
         {
-            get;
-            private set;
+            if (_inputSem.Wait(0, _ct))
+            {
+                _inputSem.Release();
+                _dbsess.RunAsync(ProcessInput);
+            }
+            return;
+        }
+
+        // Websocket input string queue
+        public ConcurrentQueue<string> Input
+        {
+            get { return _input; }
         }
 
         public Guid PeerGuid
@@ -111,7 +139,8 @@ namespace Replicator
         }
 
         // Last LogPosition received from peer that was successfully committed.
-        public LogPosition LastLogPosition
+        // Must run on a SC thread
+        private LogPosition LastLogPosition
         {
             get
             {
@@ -133,38 +162,29 @@ namespace Replicator
             }
         }
 
-        private Task HandleSendResult(Task t)
+        // Must run on a SC thread
+        private void ProcessFailedSendResult(Task t)
         {
             if (t.IsFaulted)
             {
                 Console.WriteLine("Replicator: {0}: Exception: {1}", PeerGuidString, t.Exception.ToString());
                 Quit(t.Exception.Message);
-                return t;
+                return;
             }
             if (t.IsCanceled)
             {
                 Console.WriteLine("Replicator: {0}: Cancelled", PeerGuidString);
                 Quit("Cancelled");
-                return t;
+                return;
             }
-            return t;
         }
 
-        private Task HandleSentTransaction(Task t, LogReadResult tran)
+        // Can be called from non-SC thread
+        private void HandleSendResult(Task t)
         {
-            if (t.IsFaulted)
-            {
-                Console.WriteLine("Replicator: {0}: Transaction {1}: Exception: {2}", PeerGuidString, tran.continuation_position, t.Exception.ToString());
-                Quit(t.Exception.Message);
-                return t;
-            }
-            if (t.IsCanceled)
-            {
-                Console.WriteLine("Replicator: {0}: Transaction {1}: Cancelled", PeerGuidString, tran.continuation_position);
-                Quit("Cancelled");
-                return t;
-            }
-            return t;
+            if (t.IsFaulted || t.IsCanceled)
+                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
+            return;
         }
 
         private void StartReplication(LogPosition pos)
@@ -173,40 +193,66 @@ namespace Replicator
                 throw new InvalidOperationException("peer GUID not set");
             _reader = _logmanager.OpenLog(ReplicationParent.TransactionLogDirectory, pos);
             if (_reader != null)
-                HandleOutboundTransaction(null);
+                _reader.ReadAsync(_ct).ContinueWith(HandleOutboundTransaction);
         }
 
+        // Called from non-SC thread (LogReader)
         private void HandleOutboundTransaction(Task<LogReadResult> t)
         {
-            if (t != null)
+            _logQueue.Enqueue(t);
+            if (_logQueueSem.Wait(0, _ct))
             {
-                if (t.IsCanceled)
-                {
-                    Console.WriteLine("Replicator: {0}: Cancelled", PeerGuidString);
-                    Quit("Cancelled");
-                    return;
-                }
-
-                if (t.IsFaulted)
-                {
-                    Console.WriteLine("Replicator: {0}: {1}", PeerGuidString, t.Exception.ToString());
-                    Quit(t.Exception.Message);
-                    return;
-                }
-
-                var tran = t.Result;
-                if (FilterTransaction(t.Result.transaction_data))
-                {
-                    _sender.SendStringAsync(JsonConvert.SerializeObject(tran), _ct).ContinueWith((st) => HandleSentTransaction(st, tran));
-                }
+                _logQueueSem.Release();
+                _dbsess.RunAsync(ProcessLogQueue);
             }
-
-            if (!_ct.IsCancellationRequested)
-                _reader.ReadAsync(_ct).ContinueWith(HandleOutboundTransaction);
-
             return;
         }
 
+        // Must run on a SC thread
+        private void ProcessLogQueue()
+        {
+            if (_logQueueSem.Wait(0, _ct))
+            {
+                try
+                {
+                    Task<LogReadResult> t;
+                    while (_logQueue.TryDequeue(out t))
+                        ProcessOutboundTransaction(t);
+                }
+                finally
+                {
+                    if (!_ct.IsCancellationRequested)
+                        _reader.ReadAsync(_ct).ContinueWith(HandleOutboundTransaction);
+                    _logQueueSem.Release();
+                }
+            }
+        }
+
+        // Must run on a SC thread
+        private void ProcessOutboundTransaction(Task<LogReadResult> t)
+        {
+            if (t.IsCanceled)
+            {
+                Console.WriteLine("Replicator: {0}: Cancelled", PeerGuidString);
+                Quit("Cancelled");
+                return;
+            }
+
+            if (t.IsFaulted)
+            {
+                Console.WriteLine("Replicator: {0}: {1}", PeerGuidString, t.Exception.ToString());
+                Quit(t.Exception.Message);
+                return;
+            }
+
+            LogReadResult lrr = t.Result;
+            if (FilterTransaction(lrr.transaction_data))
+            {
+                _sender.SendStringAsync(JsonConvert.SerializeObject(lrr), _ct).ContinueWith(HandleSendResult);
+            }
+        }
+
+        // Must run on a SC thread
         private bool FilterTransaction(TransactionData tran)
         {
             int index;
@@ -279,7 +325,8 @@ namespace Replicator
             return false;
         }
 
-        public void HandleStringMessage(string message)
+        // Must run on a SC thread
+        private void ProcessStringMessage(string message)
         {
             try
             {
@@ -312,6 +359,7 @@ namespace Replicator
                         {
                             // TODO: wait for @bigwad to export comparison for LogPosition
                             // so we can make sure the commit ID is progressing
+                            repl.DatabaseGuid = PeerGuidString; // needed so it shows up in the outbound log
                             repl.Address = tran.continuation_position.address;
                             repl.Signature = tran.continuation_position.signature;
                             repl.CommitId = tran.continuation_position.commit_id;
@@ -374,6 +422,7 @@ namespace Replicator
             return;
         }
 
+        // Must run on a SC thread
         public void Quit(string error = "")
         {
             _sender.SendStringAsync("!QUIT " + error, _ct).ContinueWith((t) =>
@@ -387,15 +436,16 @@ namespace Replicator
 
         public void Dispose()
         {
-            if (IsDisposed)
-                return;
-            IsDisposed = true;
-            if (IsPeerGuidSet)
+            if (!IsDisposed)
             {
-                Console.WriteLine("Replicator: {0} disconnected", PeerGuidString);
-                PeerGuid = Guid.Empty;
+                IsDisposed = true;
+                if (IsPeerGuidSet)
+                {
+                    Console.WriteLine("Replicator: {0} disconnected", PeerGuidString);
+                    PeerGuid = Guid.Empty;
+                }
+                _sender.Dispose();
             }
-            _sender.Dispose();
         }
     }
 }
