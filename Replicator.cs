@@ -58,7 +58,7 @@ namespace Replicator
         // Must run in a SC thread
         public void ProcessInput()
         {
-            if (_inputSem.Wait(0, _ct))
+            if (_inputSem.Wait(0))
             {
                 try
                 {
@@ -76,7 +76,7 @@ namespace Replicator
         // May run in any thread
         public void HandleInput()
         {
-            if (_inputSem.Wait(0, _ct))
+            if (_inputSem.Wait(0))
             {
                 _inputSem.Release();
                 _dbsess.RunAsync(ProcessInput);
@@ -211,7 +211,7 @@ namespace Replicator
         // Must run on a SC thread
         private void ProcessLogQueue()
         {
-            if (_logQueueSem.Wait(0, _ct))
+            if (_logQueueSem.Wait(0))
             {
                 try
                 {
