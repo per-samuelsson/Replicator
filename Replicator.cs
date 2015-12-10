@@ -315,11 +315,12 @@ namespace Replicator
                 {
                     if (tran.creates[index].table == "Replicator.Replication")
                     {
-                        for (int i = 0; i < tran.creates[index].columns.Length; i++)
+                        var columns = tran.creates[index].columns;
+                        for (int i = 0; i < columns.Length; i++)
                         {
-                            if (tran.creates[index].columns[i].name == "DatabaseGuid")
+                            if (columns[i].name == "DatabaseGuid")
                             {
-                                if ((string)tran.creates[index].columns[i].value == PeerGuidString)
+                                if ((string)columns[i].value == PeerGuidString)
                                     return false;
                             }
                         }
@@ -339,11 +340,12 @@ namespace Replicator
                 {
                     if (tran.creates[index].table == "Replicator.Replication")
                     {
-                        for (int i = 0; i < tran.updates[index].columns.Length; i++)
+                        var columns = tran.updates[index].columns;
+                        for (int i = 0; i < columns.Length; i++)
                         {
-                            if (tran.updates[index].columns[i].name == "DatabaseGuid")
+                            if (columns[i].name == "DatabaseGuid")
                             {
-                                if ((string)tran.updates[index].columns[i].value == PeerGuidString)
+                                if ((string)columns[i].value == PeerGuidString)
                                     return false;
                             }
                         }
