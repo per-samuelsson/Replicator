@@ -4,6 +4,5 @@
   "ParentUri$": "",
   "ReconnectMinimumWaitSeconds$": 0,
   "ReconnectMaximumWaitSeconds$": 0,
-  "Status": "",
   "ConnectNow$": 0
 }

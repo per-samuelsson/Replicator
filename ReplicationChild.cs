@@ -92,6 +92,7 @@ namespace Replicator
         private Starcounter.DbSession _dbsess = null;
         private int _reconnectMinimum;
         private int _reconnectMaximum;
+        private bool _isConnected = false;
 
         public ReplicationChild(ILogManager manager, string parentUri, CancellationToken ct)
         {
@@ -112,6 +113,7 @@ namespace Replicator
 
         public void Connect(Task t)
         {
+            IsConnected = false;
             if (t != null)
             {
                 if (t.IsCanceled)
@@ -134,6 +136,7 @@ namespace Replicator
 
         public void Reconnect(Exception e = null)
         {
+            IsConnected = false;
             string msg = null;
             if (_source != null)
             {
@@ -185,6 +188,31 @@ namespace Replicator
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 
+        public bool IsConnected
+        {
+            get
+            {
+                return _isConnected;
+            }
+            private set
+            {
+                if (_isConnected != value)
+                {
+                    if (value)
+                    {
+                        ReconnectInterval = _reconnectMinimum;
+                        Program.ParentGuid = _source.PeerGuidString;
+                        _isConnected = true;
+                    }
+                    else
+                    {
+                        Program.ParentGuid = "";
+                        _isConnected = false;
+                    }
+                }
+            }
+        }
+
         public void HandleReceive(Task<WebSocketReceiveResult> t)
         {
             if (t.IsCanceled)
@@ -197,10 +225,9 @@ namespace Replicator
                 Reconnect(t.Exception);
                 return;
             }
-            if (_source.IsPeerGuidSet)
+            if (!IsConnected && _source.IsPeerGuidSet)
             {
-                Program.ParentGuid = _source.PeerGuidString;
-                ReconnectInterval = _reconnectMinimum;
+                IsConnected = true;
             }
 
             WebSocketReceiveResult wsrr = t.Result;

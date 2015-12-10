@@ -32,7 +32,7 @@ namespace Replicator {
                 if (master.CurrentPartial as Home == null) {
                     master.CurrentPartial = new Home()
                     {
-                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Program.GetDatabaseGuid().ToString()).First,
+                        Data = Program.ParentStatus,
                     };
                 }
 

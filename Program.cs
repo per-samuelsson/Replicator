@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using System.Collections.Generic;
 using Starcounter;
 using Starcounter.Internal;
 using Starcounter.TransactionLog;
@@ -14,19 +15,54 @@ namespace Replicator
         public string ParentGuid;
         public int ReconnectMinimumWaitSeconds;
         public int ReconnectMaximumWaitSeconds;
-        public string Status;
+    }
+
+    public class ParentStatus
+    {
+        private const int MaxMessages = 100;
+        public string DatabaseGuid = "";
+        public List<string> Messages = new List<string>();
+
+        public string Message
+        {
+            get
+            {
+                lock (Messages)
+                {
+                    if (Messages.Count < 1)
+                        return "";
+                    return Messages[Messages.Count - 1];
+                }
+            }
+            set
+            {
+                lock (Messages)
+                {
+                    Messages.Add(value);
+                    while (Messages.Count > MaxMessages)
+                    {
+                        Messages.RemoveAt(0);
+                    }
+                }
+            }
+        }
+
+        public bool IsConnected
+        {
+            get { return DatabaseGuid != ""; }
+        }
     }
 
     public class Program
     {
         public const string ReplicatorServicePath = "/Replicator/service";
         public const string ReplicatorWebsocketProtocol = "sc-replicator";
-        static Guid _selfGuid = Guid.NewGuid();
-        static ReplicationParent _server = null;
-        static ReplicationChild _client = null;
-        static ILogManager _servermanager = new MockLogManager();
-        static ILogManager _clientmanager = new MockLogManager();
-        static CancellationTokenSource _cts = new CancellationTokenSource();
+        private static ReplicationParent _server = null;
+        private static ReplicationChild _client = null;
+        private static ILogManager _servermanager = new MockLogManager();
+        private static ILogManager _clientmanager = new MockLogManager();
+        private static CancellationTokenSource _cts = new CancellationTokenSource();
+        private static ParentStatus _parentStatus = new ParentStatus();
 
         static public Guid GetDatabaseGuid()
         {
@@ -52,10 +88,14 @@ namespace Replicator
                     ParentGuid = "",
                     ReconnectMinimumWaitSeconds = 1,
                     ReconnectMaximumWaitSeconds = 60 * 60 * 24,
-                    Status = "",
                 };
             }
             return conf;
+        }
+
+        static public ParentStatus ParentStatus
+        {
+            get { return _parentStatus; }
         }
 
         static public int ReconnectMinimumWaitSeconds
@@ -152,26 +192,30 @@ namespace Replicator
         {
             get
             {
+                return _parentStatus.Message;
+                /*
                 string s = "";
                 Db.Transact(() => {
                     s = GetConfiguration().Status;
                 });
                 return s;
+                */
             }
             set
             {
                 new DbSession().RunAsync(() =>
                 {
-                    if (value == null)
-                        value = "";
+                    _parentStatus.Message = value == null ? "" : value;
+                    /*
                     Db.Transact(() => {
                         GetConfiguration().Status = value;
                     });
+                    */
                     Session.ForAll((s) =>
                     {
                         s.CalculatePatchAndPushOnWebSocket();
                     });
-                }, 0);
+                });
             }
         }
 

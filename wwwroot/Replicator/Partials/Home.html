@@ -1,6 +1,10 @@
 ﻿<style>
     .status {
-        border: 1px solid blue;
+        border-width: 1px;
+        border-style: solid;
+        border-color: lightgray;
+        margin-left: 10px;
+        padding-left: 10px;
     }
 </style>
 <template>
@@ -13,7 +17,7 @@
                     <span class="input-group-btn">
                         <button class="btn btn-default" type="button" onclick="++this.value;" value="{{model.ConnectNow$::click}}">Connect Now</button>
                     </span>
-                    <input type="text" readonly class="form-control" placeholder="{{model.Status}}" style="border: 1px solid lightgray; margin-left: 10px; padding-left: 10px">
+                    <input type="text" readonly class="form-control status" placeholder="{{model.Message}}">
                 </div><!-- /input-group -->
             </div><!-- /.col-lg-12 -->
         </div><!-- /.row -->
