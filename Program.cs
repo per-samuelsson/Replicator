@@ -168,10 +168,15 @@ namespace Replicator
             {
                 new DbSession().RunAsync(() =>
                 {
+                    if (value == null)
+                        value = "";
                     Db.Transact(() => {
                         GetConfiguration().Status = value;
                     });
-                    Session.ForAll((s) => { s.CalculatePatchAndPushOnWebSocket(); });
+                    Session.ForAll((s) =>
+                    {
+                        s.CalculatePatchAndPushOnWebSocket();
+                    });
                 }, 0);
             }
         }
