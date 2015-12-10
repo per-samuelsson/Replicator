@@ -78,7 +78,7 @@ namespace Replicator
 
         static private Configuration GetConfiguration()
         {
-            Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Program.GetDatabaseGuid().ToString()).First;
+            Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", GetDatabaseGuid().ToString()).First;
             if (conf == null)
             {
                 conf = new Configuration()
@@ -193,24 +193,12 @@ namespace Replicator
             get
             {
                 return _parentStatus.Message;
-                /*
-                string s = "";
-                Db.Transact(() => {
-                    s = GetConfiguration().Status;
-                });
-                return s;
-                */
             }
             set
             {
                 new DbSession().RunAsync(() =>
                 {
                     _parentStatus.Message = value == null ? "" : value;
-                    /*
-                    Db.Transact(() => {
-                        GetConfiguration().Status = value;
-                    });
-                    */
                     Session.ForAll((s) =>
                     {
                         s.CalculatePatchAndPushOnWebSocket();
