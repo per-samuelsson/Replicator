@@ -251,7 +251,7 @@ namespace Replicator
         private void HandleOutboundTransaction(Task<LogReadResult> t)
         {
             _logQueue.Enqueue(t);
-            if (_logQueueSem.Wait(0, _ct))
+            if (_logQueueSem.Wait(0))
             {
                 _logQueueSem.Release();
                 _dbsess.RunAsync(ProcessLogQueue);

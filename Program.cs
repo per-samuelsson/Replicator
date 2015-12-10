@@ -225,6 +225,7 @@ namespace Replicator
 
         static void Main()
         {
+            Db.Transact(() => { GetConfiguration(); }); // ensure that configuration object is created
             Status = "Not connected.";
             new HttpHandlers();
             _server = new ReplicationParent(_servermanager, _cts.Token);
