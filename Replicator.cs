@@ -476,11 +476,12 @@ namespace Replicator
         // Must run on a SC thread
         public void Quit(string error = "")
         {
-            _sender.SendStringAsync("!QUIT " + error, _ct).ContinueWith((t) =>
-            {
-                _sender.CloseAsync((error == "") ? 1000 : 4000, error, _ct).ContinueWith((_) => 
-                {
-                    Dispose();
+            _sender.SendStringAsync("!QUIT " + error, _ct).ContinueWith((t1) => {
+                _dbsess.RunAsync(() => {
+                    _sender.CloseAsync((error == "") ? 1000 : 4000, error, _ct).ContinueWith((t2) =>
+                    {
+                        Dispose();
+                    });
                 });
             });
         }
