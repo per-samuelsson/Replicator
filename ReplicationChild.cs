@@ -184,7 +184,7 @@ namespace Replicator
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct);
+            _source = new Replicator(false, _dbsess, new DotNetWebSocketSender(_ws), _manager, _ct);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 
@@ -201,12 +201,12 @@ namespace Replicator
                     if (value)
                     {
                         ReconnectInterval = _reconnectMinimum;
-                        Program.ParentGuid = _source.PeerGuidString;
+                        Program.ParentStatus.DatabaseGuid = _source.PeerGuidString;
                         _isConnected = true;
                     }
                     else
                     {
-                        Program.ParentGuid = "";
+                        Program.ParentStatus.DatabaseGuid = "";
                         _isConnected = false;
                     }
                 }

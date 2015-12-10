@@ -25,10 +25,5 @@ namespace Replicator {
             this.Data.ReconnectMaximumWaitSeconds = (int)Action.Value;
             this.Transaction.Commit();
         }
-
-        void Handle(Input.ConnectNow Action)
-        {
-            Program.Connect();
-        }
     }
 }

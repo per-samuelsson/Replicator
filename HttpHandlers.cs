@@ -34,6 +34,7 @@ namespace Replicator {
                     {
                         Data = Program.ParentStatus,
                     };
+                    ((Home)master.CurrentPartial).StatusPartial.Data = Program.ParentStatus;
                 }
 
                 return master;
@@ -46,6 +47,7 @@ namespace Replicator {
                     {
                         Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Program.GetDatabaseGuid().ToString()).First,
                     };
+                    ((Settings)master.CurrentPartial).StatusPartial.Data = Program.ParentStatus;
                 }
 
                 return master;

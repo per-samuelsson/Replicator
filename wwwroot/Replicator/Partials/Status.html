@@ -1,0 +1,25 @@
+﻿<style>
+    .status {
+        border-width: 1px;
+        border-style: solid;
+        border-color: lightgray;
+        margin-left: 10px;
+        padding-left: 10px;
+    }
+</style>
+<template>
+    <template is="dom-bind">
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="input-group">
+                    <span class="input-group-btn">
+                        <button class="btn btn-default" type="button" onclick="++this.value;" value="{{model.ConnectNow$::click}}">Connect Now</button>
+                    </span>
+                    <input type="text" readonly class="form-control status" placeholder="{{model.Message}}">
+                </div><!-- /input-group -->
+            </div><!-- /.col-lg-12 -->
+        </div><!-- /.row -->
+
+        <dom-bind-notifier observed-object="{{model}}" path="model" deep></dom-bind-notifier>
+    </template>
+</template>

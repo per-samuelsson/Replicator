@@ -119,7 +119,7 @@ namespace Replicator
                 }
                 UInt64 wsId = req.GetWebSocketId();
                 WebSocket ws = req.SendUpgrade(Program.ReplicatorWebsocketProtocol, null, null, null);
-                _children[wsId] = new Replicator(_dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
+                _children[wsId] = new Replicator(true, _dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)

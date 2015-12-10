@@ -29,6 +29,8 @@ namespace Replicator
 
     public sealed class Replicator : IDisposable
     {
+        private bool _isServer;
+        private bool _isConnected;
         private DbSession _dbsess;
         private IWebSocketSender _sender;
         private ILogManager _logmanager;
@@ -43,8 +45,10 @@ namespace Replicator
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
 
-        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
+        public Replicator(bool isServer, DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
+            _isServer = isServer;
+            _isConnected = false;
             _dbsess = dbsess;
             _sender = sender;
             _logmanager = manager;
@@ -53,6 +57,28 @@ namespace Replicator
             PeerGuid = Guid.Empty;
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
             _applicator = new MockLogApplicator();
+        }
+
+        public bool IsConnected
+        {
+            get
+            {
+                return _isConnected;
+            }
+            set
+            {
+                if (value != _isConnected)
+                {
+                    if (value)
+                    {
+                        _isConnected = true;
+                    }
+                    else
+                    {
+                        _isConnected = false;
+                    }
+                }
+            }
         }
 
         // Must run in a SC thread
@@ -187,13 +213,38 @@ namespace Replicator
             return;
         }
 
+        // Must run on a SC thread
         private void StartReplication(LogPosition pos)
         {
             if (!IsPeerGuidSet)
                 throw new InvalidOperationException("peer GUID not set");
             _reader = _logmanager.OpenLog(ReplicationParent.TransactionLogDirectory, pos);
             if (_reader != null)
+            {
+                if (_isServer)
+                {
+                    Db.Transact(() => {
+                        Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", PeerGuidString).First;
+                        if (conf == null)
+                        {
+                            Console.WriteLine("Did not find child GUID {0} in Replicator.Configuration", PeerGuidString);
+                            conf = new Configuration()
+                            {
+                                DatabaseGuid = PeerGuidString,
+                                ParentGuid = _selfGuid.ToString(),
+                                ReconnectMinimumWaitSeconds = 1,
+                                ReconnectMaximumWaitSeconds = 60 * 60 * 24,
+                            };
+                        }
+                        else
+                        {
+                            conf.ParentGuid = _selfGuid.ToString();
+                        }
+                    });
+
+                }
                 _reader.ReadAsync(_ct).ContinueWith(HandleOutboundTransaction);
+            }
         }
 
         // Called from non-SC thread (LogReader)

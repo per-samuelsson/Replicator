@@ -1,8 +1,10 @@
 {
   "Html": "/Replicator/Partials/Settings.html",
+  "StatusPartial": {
+    "$": { "Reuse": "Status" }
+  },
   "DatabaseGuid":  "",
   "ParentUri$": "",
   "ReconnectMinimumWaitSeconds$": 0,
-  "ReconnectMaximumWaitSeconds$": 0,
-  "ConnectNow$": 0
+  "ReconnectMaximumWaitSeconds$": 0
 }

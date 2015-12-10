@@ -1,5 +1,6 @@
 {
   "Html": "/Replicator/Partials/Home.html",
-  "Message": "",
-  "ConnectNow$": 0
+  "StatusPartial": {
+    "$": { "Reuse": "Status" }
+  }
 }

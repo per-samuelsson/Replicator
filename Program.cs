@@ -38,10 +38,14 @@ namespace Replicator
             {
                 lock (Messages)
                 {
-                    Messages.Add(value);
-                    while (Messages.Count > MaxMessages)
+                    string message = value == null ? "" : value;
+                    if (Messages.Count < 1 || Messages[Messages.Count - 1] != message)
                     {
-                        Messages.RemoveAt(0);
+                        Messages.Add(message);
+                        while (Messages.Count > MaxMessages)
+                        {
+                            Messages.RemoveAt(0);
+                        }
                     }
                 }
             }
@@ -176,6 +180,7 @@ namespace Replicator
                 });
                 return uri;
             }
+            /*
             set
             {
                 new DbSession().RunAsync(() =>
@@ -186,6 +191,7 @@ namespace Replicator
                     });
                 }, 0);
             }
+            */
         }
 
         static public string Status
@@ -214,7 +220,7 @@ namespace Replicator
                 _cts.Cancel();
                 _cts = new CancellationTokenSource();
             }
-            _client = new ReplicationChild(_clientmanager, Program.ParentUri, _cts.Token);
+            _client = new ReplicationChild(_clientmanager, ParentUri, _cts.Token);
         }
 
         static void Main()
