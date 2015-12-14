@@ -63,14 +63,16 @@ namespace Replicator
         public const string ReplicatorWebsocketProtocol = "sc-replicator";
         private static ReplicationParent _server = null;
         private static ReplicationChild _client = null;
-        private static ILogManager _servermanager = new MockLogManager();
-        private static ILogManager _clientmanager = new MockLogManager();
+        private static ILogManager _servermanager = new LogManager();
+        private static ILogManager _clientmanager = new LogManager();
         private static CancellationTokenSource _cts = new CancellationTokenSource();
         private static ParentStatus _parentStatus = new ParentStatus();
 
         static public Guid GetDatabaseGuid()
         {
-            // generate a fake database GUID until @bigwad exports the kernel API
+            return Starcounter.Db.Environment.DatabaseGuid;
+            /*
+            // generate a fake database GUID
             return new Guid(
                 System.Security.Cryptography.MD5.Create().ComputeHash(
                     System.Text.Encoding.ASCII.GetBytes(
@@ -78,6 +80,7 @@ namespace Replicator
                         )
                     )
                 );
+            */
         }
 
         static private Configuration GetConfiguration()

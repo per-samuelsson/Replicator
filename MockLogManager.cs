@@ -7,6 +7,7 @@ using Starcounter.TransactionLog;
 
 namespace Replicator
 {
+    /*
     public class MockLogManager : ILogManager
     {
         private Guid _selfGuid = Guid.NewGuid();
@@ -26,4 +27,5 @@ namespace Replicator
             return new MockLogReader(_selfGuid, position);
         }
     }
+    */
 }

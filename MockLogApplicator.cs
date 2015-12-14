@@ -7,10 +7,12 @@ using Starcounter.TransactionLog;
 
 namespace Replicator
 {
+    /*
     class MockLogApplicator : ILogApplicator
     {
         public void Apply(TransactionData transaction_data)
         {
         }
     }
+    */
 }

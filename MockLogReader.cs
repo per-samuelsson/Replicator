@@ -8,6 +8,7 @@ using Starcounter.TransactionLog;
 
 namespace Replicator
 {
+    /*
     class MockLogReader : ILogReader
     {
         private Guid _dbGuid;
@@ -59,4 +60,5 @@ namespace Replicator
             return t;
         }
     }
+    */
 }

@@ -39,7 +39,8 @@ namespace Replicator
         private Guid _peerGuid;
         private string _peerGuidString;
         private ILogReader _reader = null;
-        private ILogApplicator _applicator = null;
+
+        private LogApplicator _applicator = null;
         private SemaphoreSlim _inputSem = new SemaphoreSlim(1);
         private ConcurrentQueue<string> _input = new ConcurrentQueue<string>();
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
@@ -56,7 +57,7 @@ namespace Replicator
             _selfGuid = Program.GetDatabaseGuid();
             PeerGuid = Guid.Empty;
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
-            _applicator = new MockLogApplicator();
+            _applicator = new LogApplicator();
         }
 
         public bool IsConnected
@@ -218,7 +219,7 @@ namespace Replicator
         {
             if (!IsPeerGuidSet)
                 throw new InvalidOperationException("peer GUID not set");
-            _reader = _logmanager.OpenLog(ReplicationParent.TransactionLogDirectory, pos);
+            _reader = _logmanager.OpenLog(Starcounter.Internal.StarcounterEnvironment.DatabaseNameLower, ReplicationParent.TransactionLogDirectory, pos);
             if (_reader != null)
             {
                 if (_isServer)
