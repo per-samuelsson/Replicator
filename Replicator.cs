@@ -418,7 +418,8 @@ namespace Replicator
                             repl.Signature = tran.continuation_position.signature;
                             repl.CommitId = tran.continuation_position.commit_id;
                         }
-                        _applicator.Apply(tran.transaction_data);
+                        // TODO: Wait for @bigwad to add ObjectID separation
+                        // _applicator.Apply(tran.transaction_data);
                     });
                     return;
                 }

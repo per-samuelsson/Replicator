@@ -183,18 +183,6 @@ namespace Replicator
                 });
                 return uri;
             }
-            /*
-            set
-            {
-                new DbSession().RunAsync(() =>
-                {
-                    Db.Transact(() =>
-                    {
-                        GetConfiguration().ParentGuid = value;
-                    });
-                }, 0);
-            }
-            */
         }
 
         static public string Status
