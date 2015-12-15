@@ -271,6 +271,10 @@ namespace Replicator
                     while (_logQueue.TryDequeue(out t))
                         ProcessOutboundTransaction(t);
                 }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Replicator: {0}: ProcessLogQueue: {1}", PeerGuidString, e);
+                }
                 finally
                 {
                     if (!_ct.IsCancellationRequested)
@@ -298,84 +302,92 @@ namespace Replicator
             }
 
             LogReadResult lrr = t.Result;
-            if (FilterTransaction(lrr.transaction_data))
+            if (FilterTransaction(lrr))
             {
                 _sender.SendStringAsync(JsonConvert.SerializeObject(lrr), _ct).ContinueWith(HandleSendResult);
             }
         }
 
         // Must run on a SC thread
-        private bool FilterTransaction(TransactionData tran)
+        private bool FilterTransaction(LogReadResult lrr)
         {
-            int index;
-
-            index = 0;
-            while (index < tran.creates.Count)
+            try
             {
-                if (tran.creates[index].table.StartsWith("Replicator."))
+                var tran = lrr.transaction_data;
+                int index;
+
+                index = 0;
+                while (index < tran.creates.Count)
                 {
-                    if (tran.creates[index].table == "Replicator.Replication")
+                    if (tran.creates[index].table.StartsWith("Replicator."))
                     {
-                        var columns = tran.creates[index].columns;
-                        for (int i = 0; i < columns.Length; i++)
+                        if (tran.creates[index].table == "Replicator.Replication")
                         {
-                            if (columns[i].name == "DatabaseGuid")
+                            var columns = tran.creates[index].columns;
+                            for (int i = 0; i < columns.Length; i++)
                             {
-                                if ((string)columns[i].value == PeerGuidString)
-                                    return false;
+                                if (columns[i].name == "DatabaseGuid")
+                                {
+                                    if ((string)columns[i].value == PeerGuidString)
+                                        return false;
+                                }
                             }
                         }
+                        tran.creates.RemoveAt(index);
                     }
-                    tran.creates.RemoveAt(index);
-                }
-                else
-                {
-                    index++;
-                }
-            }
-
-            index = 0;
-            while (index < tran.updates.Count)
-            {
-                if (tran.updates[index].table.StartsWith("Replicator."))
-                {
-                    if (tran.creates[index].table == "Replicator.Replication")
+                    else
                     {
-                        var columns = tran.updates[index].columns;
-                        for (int i = 0; i < columns.Length; i++)
+                        index++;
+                    }
+                }
+
+                index = 0;
+                while (index < tran.updates.Count)
+                {
+                    if (tran.updates[index].table.StartsWith("Replicator."))
+                    {
+                        if (tran.updates[index].table == "Replicator.Replication")
                         {
-                            if (columns[i].name == "DatabaseGuid")
+                            var columns = tran.updates[index].columns;
+                            for (int i = 0; i < columns.Length; i++)
                             {
-                                if ((string)columns[i].value == PeerGuidString)
-                                    return false;
+                                if (columns[i].name == "DatabaseGuid")
+                                {
+                                    if ((string)columns[i].value == PeerGuidString)
+                                        return false;
+                                }
                             }
                         }
+                        tran.updates.RemoveAt(index);
                     }
-                    tran.updates.RemoveAt(index);
+                    else
+                    {
+                        index++;
+                    }
                 }
-                else
-                {
-                    index++;
-                }
-            }
 
-            index = 0;
-            while (index < tran.deletes.Count)
+                index = 0;
+                while (index < tran.deletes.Count)
+                {
+                    if (tran.deletes[index].table.StartsWith("Replicator."))
+                    {
+                        tran.deletes.RemoveAt(index);
+                    }
+                    else
+                    {
+                        index++;
+                    }
+                }
+
+                if (tran.updates.Count > 0 || tran.creates.Count > 0 || tran.deletes.Count > 0)
+                    return true;
+            }
+            catch (Exception e)
             {
-                if (tran.deletes[index].table.StartsWith("Replicator."))
-                {
-                    tran.deletes.RemoveAt(index);
-                }
-                else
-                {
-                    index++;
-                }
+                Console.WriteLine("Replicator: {0}: FilterTransaction {1}: {2}", PeerGuidString, lrr.continuation_position, e);
             }
 
-            if (tran.updates.Count > 0 || tran.creates.Count > 0 || tran.deletes.Count > 0)
-                return true;
-
-            // Transaction is empty, don't send it
+            // Transaction is empty or exception occured, don't send it
             return false;
         }
 
