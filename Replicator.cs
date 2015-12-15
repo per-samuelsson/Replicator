@@ -424,8 +424,7 @@ namespace Replicator
                             repl.Signature = tran.continuation_position.signature;
                             repl.CommitId = tran.continuation_position.commit_id;
                         }
-                        // TODO: Wait for @bigwad to add ObjectID separation
-                        // _applicator.Apply(tran.transaction_data);
+                        _applicator.Apply(tran.transaction_data);
                     });
                     return;
                 }
@@ -475,7 +474,7 @@ namespace Replicator
             catch (Exception e)
             {
                 Console.WriteLine("Replicator: \"{0}\": {1}", message, e);
-                Quit(e.Message);
+                Quit(e.ToString());
                 return;
             }
 
