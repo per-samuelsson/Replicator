@@ -4,9 +4,9 @@ namespace Replicator
 {
     partial class Status : Partial
     {
-        void Handle(Input.ConnectNow Action)
+        void Handle(Input.Enabled Action)
         {
-            Program.Connect();
+            Program.ReplicationEnabled = Action.Value;
         }
     }
 }

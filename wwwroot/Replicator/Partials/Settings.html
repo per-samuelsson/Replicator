@@ -6,6 +6,12 @@
 
         <form class="form-horizontal">
             <div class="form-group">
+                <label for="databaseGuid" class="col-sm-3 control-label">This Database GUID</label>
+                <div class="col-sm-9">
+                    <input type="text" class="form-control" id="databaseGuid" readonly placeholder="{{model.DatabaseGuid}}" value="{{model.DatabaseGuid}}">
+                </div>
+            </div>
+            <div class="form-group">
                 <label for="parentUri" class="col-sm-3 control-label">Parent URI</label>
                 <div class="col-sm-9">
                     <input type="text" class="form-control" id="parentUri" placeholder="Parent URI" value="{{model.ParentUri$::change}}">

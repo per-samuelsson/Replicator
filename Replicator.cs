@@ -319,15 +319,18 @@ namespace Replicator
                 index = 0;
                 while (index < tran.creates.Count)
                 {
-                    if (tran.creates[index].table == "Replicator.Replication")
+                    if (tran.creates[index].table.StartsWith("Replicator."))
                     {
-                        var columns = tran.creates[index].columns;
-                        for (int i = 0; i < columns.Length; i++)
+                        if (tran.creates[index].table == "Replicator.Replication")
                         {
-                            if (columns[i].name == "DatabaseGuid")
+                            var columns = tran.creates[index].columns;
+                            for (int i = 0; i < columns.Length; i++)
                             {
-                                if ((string)columns[i].value == PeerGuidString)
-                                    return false;
+                                if (columns[i].name == "DatabaseGuid")
+                                {
+                                    if ((string)columns[i].value == PeerGuidString)
+                                        return false;
+                                }
                             }
                         }
                         tran.creates.RemoveAt(index);
@@ -341,15 +344,18 @@ namespace Replicator
                 index = 0;
                 while (index < tran.updates.Count)
                 {
-                    if (tran.updates[index].table == "Replicator.Replication")
+                    if (tran.updates[index].table.StartsWith("Replicator."))
                     {
-                        var columns = tran.updates[index].columns;
-                        for (int i = 0; i < columns.Length; i++)
+                        if (tran.updates[index].table == "Replicator.Replication")
                         {
-                            if (columns[i].name == "DatabaseGuid")
+                            var columns = tran.updates[index].columns;
+                            for (int i = 0; i < columns.Length; i++)
                             {
-                                if ((string)columns[i].value == PeerGuidString)
-                                    return false;
+                                if (columns[i].name == "DatabaseGuid")
+                                {
+                                    if ((string)columns[i].value == PeerGuidString)
+                                        return false;
+                                }
                             }
                         }
                         tran.updates.RemoveAt(index);
@@ -363,7 +369,7 @@ namespace Replicator
                 index = 0;
                 while (index < tran.deletes.Count)
                 {
-                    if (tran.updates[index].table == "Replicator.Replication")
+                    if (tran.updates[index].table.StartsWith("Replicator."))
                     {
                         tran.deletes.RemoveAt(index);
                     }
@@ -452,11 +458,6 @@ namespace Replicator
                     if (peerGuid == _selfGuid)
                     {
                         Quit("GUID is my own");
-                        return;
-                    }
-                    if (peerGuid.ToString() == Program.ParentGuid)
-                    {
-                        Quit("GUID is parents");
                         return;
                     }
                     PeerGuid = peerGuid;

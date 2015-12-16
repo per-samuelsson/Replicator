@@ -67,6 +67,7 @@ namespace Replicator
         private static ILogManager _clientmanager = new LogManager();
         private static CancellationTokenSource _cts = new CancellationTokenSource();
         private static ParentStatus _parentStatus = new ParentStatus();
+        private static bool _replicationEnabled = false;
 
         static public Guid GetDatabaseGuid()
         {
@@ -98,6 +99,26 @@ namespace Replicator
                 };
             }
             return conf;
+        }
+
+        static public bool ReplicationEnabled
+        {
+            get
+            {
+                return _replicationEnabled;
+            }
+            set
+            {
+                if (value)
+                {
+                    Program.Connect();
+                }
+                else
+                {
+                    Program.Disconnect();
+                }
+
+            }
         }
 
         static public ParentStatus ParentStatus
@@ -206,12 +227,21 @@ namespace Replicator
 
         static public void Connect()
         {
+            Disconnect();
+            _replicationEnabled = true;
+            _client = new ReplicationChild(_clientmanager, ParentUri, _cts.Token);
+        }
+
+        static public void Disconnect()
+        {
             if (_client != null)
             {
                 _cts.Cancel();
                 _cts = new CancellationTokenSource();
+                _client = null;
             }
-            _client = new ReplicationChild(_clientmanager, ParentUri, _cts.Token);
+            _replicationEnabled = false;
+            Status = "Not connected.";
         }
 
         static void Main()
