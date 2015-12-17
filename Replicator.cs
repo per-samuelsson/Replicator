@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -46,6 +47,8 @@ namespace Replicator
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
 
+        private HashSet<string> _filterTables = new HashSet<string>();
+
         public Replicator(bool isServer, DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
             _isServer = isServer;
@@ -58,6 +61,8 @@ namespace Replicator
             PeerGuid = Guid.Empty;
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
             _applicator = new LogApplicator();
+            _filterTables.Add("Replicator.Replication");
+            _filterTables.Add("Replicator.Configuration");
         }
 
         public bool IsConnected
@@ -316,66 +321,69 @@ namespace Replicator
                 var tran = lrr.transaction_data;
                 int index;
 
-                index = 0;
-                while (index < tran.creates.Count)
+                lock (_filterTables)
                 {
-                    if (tran.creates[index].table.StartsWith("Replicator."))
+                    index = 0;
+                    while (index < tran.creates.Count)
                     {
-                        if (tran.creates[index].table == "Replicator.Replication")
+                        if (_filterTables.Contains(tran.creates[index].table))
                         {
-                            var columns = tran.creates[index].columns;
-                            for (int i = 0; i < columns.Length; i++)
+                            if (tran.creates[index].table == "Replicator.Replication")
                             {
-                                if (columns[i].name == "DatabaseGuid")
+                                var columns = tran.creates[index].columns;
+                                for (int i = 0; i < columns.Length; i++)
                                 {
-                                    if ((string)columns[i].value == PeerGuidString)
-                                        return false;
+                                    if (columns[i].name == "DatabaseGuid")
+                                    {
+                                        if ((string)columns[i].value == PeerGuidString)
+                                            return false;
+                                    }
                                 }
                             }
+                            tran.creates.RemoveAt(index);
                         }
-                        tran.creates.RemoveAt(index);
-                    }
-                    else
-                    {
-                        index++;
-                    }
-                }
-
-                index = 0;
-                while (index < tran.updates.Count)
-                {
-                    if (tran.updates[index].table.StartsWith("Replicator."))
-                    {
-                        if (tran.updates[index].table == "Replicator.Replication")
+                        else
                         {
-                            var columns = tran.updates[index].columns;
-                            for (int i = 0; i < columns.Length; i++)
+                            index++;
+                        }
+                    }
+
+                    index = 0;
+                    while (index < tran.updates.Count)
+                    {
+                        if (_filterTables.Contains(tran.updates[index].table))
+                        {
+                            if (tran.updates[index].table == "Replicator.Replication")
                             {
-                                if (columns[i].name == "DatabaseGuid")
+                                var columns = tran.updates[index].columns;
+                                for (int i = 0; i < columns.Length; i++)
                                 {
-                                    if ((string)columns[i].value == PeerGuidString)
-                                        return false;
+                                    if (columns[i].name == "DatabaseGuid")
+                                    {
+                                        if ((string)columns[i].value == PeerGuidString)
+                                            return false;
+                                    }
                                 }
                             }
+                            tran.updates.RemoveAt(index);
                         }
-                        tran.updates.RemoveAt(index);
+                        else
+                        {
+                            index++;
+                        }
                     }
-                    else
-                    {
-                        index++;
-                    }
-                }
 
-                index = 0;
-                while (index < tran.deletes.Count)
-                {
-                    if (tran.updates[index].table.StartsWith("Replicator."))
+                    index = 0;
+                    while (index < tran.deletes.Count)
                     {
-                        tran.deletes.RemoveAt(index);
-                    }
-                    else
-                    {
-                        index++;
+                        if (_filterTables.Contains(tran.deletes[index].table))
+                        {
+                            tran.deletes.RemoveAt(index);
+                        }
+                        else
+                        {
+                            index++;
+                        }
                     }
                 }
 
