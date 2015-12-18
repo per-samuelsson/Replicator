@@ -22,7 +22,7 @@ The Replicator will prevent local feedback loops, meaning that when an incoming 
 
 The `TransactionLog` API will provide all non-system table transactions from a given log position. This includes transactions which may no longer be possible to perform. For instance, if the database class (table) or property (column) no longer exists. Also, it is usually desirable to filter out data which should not be distributed. This may be for a variety of reasons including legal, security, financial or simply to save bandwidth.
 
-The Replicator has a filtering in place, which is an opt-in mechanism using Starcounter handlers. For example, to allow updates for the table "MyCompany.MyApplication" to be sent out, you add a handler like one of these:
+The Replicator has a filtering in place, which is an opt-in mechanism using Starcounter handlers. For example, to allow updates for the table "MyCompany.MyApplication" to be sent out, you add a handler like one of these to your Replicator application:
 
 > `Handle.GET("/Replicator/out/MyCompany.MyApplication/{?}", (string destinationGuid) => { return 200; });`
 > `Handle.POST("/Replicator/out/MyCompany.MyApplication/update/{?}", (string destinationGuid) => { return 200; });`
@@ -33,6 +33,8 @@ The handler must status code `200 OK` to allow sending it, with an optional new 
 
 To send all transactions for all tables you would use the handler
 > `Handle.GET("/Replicator/out/{?}/{?}", (string tableName, string destinationGuid) => { return 200; });`
+
+*NOTE* That these handlers are currently called using `Self.GET`, so they must be declared in the Replicator application, and the response from them is used to determine whether to send or not, so `UriMapping` cannot be used. In the future we may choose to do this differently, as it makes more sense to have these handlers in the classes for the tables themselves. One possible workaround would be to use `Http.GET` instead, but that obviously incurs a performance penalty.
 
 ## Use as backup solution
 
@@ -45,3 +47,4 @@ Replicating data across a distributed system is an excellent [footgun](http://ww
 * Do not delete or rename replicated database classes, as they will still be referenced in old transactions.
 * Do not remove replicated database class properties, for the same reason.
 * Don't start replication until all applications whose data being replicated are fully loaded on the codehost.
+* Don't add tables to what's to be replicated if instances of the class have already been created and the log position has progressed past that point.
