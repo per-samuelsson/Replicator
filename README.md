@@ -24,12 +24,15 @@ The `TransactionLog` API will provide all non-system table transactions from a g
 
 The Replicator has a filtering in place, which is an opt-in mechanism using Starcounter handlers. For example, to allow updates for the table "MyCompany.MyApplication" to be sent out, you add a handler like one of these:
 
-> `Handle.GET("/Replicator/out/MyCompany.MyApplication/{?}", (string destinationGuid) => {});`
-> `Handle.POST("/Replicator/out/MyCompany.MyApplication/update/{?}", (string destinationGuid) => {});`
+> `Handle.GET("/Replicator/out/MyCompany.MyApplication/{?}", (string destinationGuid) => { return 200; });`
+> `Handle.POST("/Replicator/out/MyCompany.MyApplication/update/{?}", (string destinationGuid) => { return 200; });`
 
 The GET handler would be for the simple use-case of allowing or denying all changes to a given table using only the destination database GUID, and is fairly cheap to call. The POST handler can handle more complex scenarios, and receives a serialized `Starcounter.TransactionLog.update_record_entry` in the body.
 
 The handler must status code `200 OK` to allow sending it, with an optional new `update_record_entry` in the body to send that instead, or `201 No Content` or higher to prevent it from being sent at all. The Replicator will also cache calls that return a `404 Not Found` to improve performance.
+
+To send all transactions for all tables you would use the handler
+> `Handle.GET("/Replicator/out/{?}/{?}", (string tableName, string destinationGuid) => { return 200; });`
 
 ## Use as backup solution
 
