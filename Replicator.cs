@@ -479,7 +479,7 @@ namespace Replicator
                             }
                             tran.creates.RemoveAt(index);
                         }
-                        if (FilterCreate("/Replicator/out/" + tran.creates[index].table + "/", ref record))
+                        else if (FilterCreate("/Replicator/out/" + tran.creates[index].table + "/", ref record))
                         {
                             tran.creates[index] = record;
                             index++;
@@ -525,7 +525,7 @@ namespace Replicator
                         {
                             tran.deletes.RemoveAt(index);
                         }
-                        if (FilterDelete("/Replicator/out/" + tran.deletes[index].table + "/", ref record))
+                        else if (FilterDelete("/Replicator/out/" + tran.deletes[index].table + "/", ref record))
                         {
                             tran.deletes[index] = record;
                             index++;
