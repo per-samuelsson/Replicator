@@ -10,6 +10,7 @@ All databases participating in replication require:
 * A version of Starcounter that has the `Starcounter.TransactionLog` assembly.
 * A unique Object ID range (can be set when creating the database using the `Advanced` settings).
 * All except one require the Replicator URI for it's upstream (parent) replication database.
+* You should run the same versions of all applications whose data are being replicated.
 
 ## Topology
 
@@ -29,3 +30,15 @@ The Replicator has a primitive filtering in place as it is, but it's planned to 
 The GET handler would be for the simple use-case of allowing or denying all changes to a given table using only the destination database GUID, and should be fairly cheap to call. The POST handler would handle more complex scenarios, and would receive a serialized `Starcounter.TransactionLog.update_record_entry` in the body.
 
 The handler would return status code `200 OK` to allow sending it, with an optional new `column_update[]` in the body to send that instead, or `201 No Content` or higher to prevent it from being sent at all. The Replicator might also choose to cache calls that return a `404 Not Found` to improve performance.
+
+## Use as backup solution
+
+You can use the Replicator to maintain a real-time copy of a database by simply allowing all changes to be propagated to the copy and not doing any local changes on the copy.
+
+## Footgun capabilities
+
+Replicating data across a distributed system is an excellent [footgun](http://www.urbandictionary.com/define.php?term=footgun). It's easy to end up in a situation where the global system state is inconsistent. How to organize your data flows to prevent this is outside the scope of this README, but some general advice may be in order to help prevent inconsistencies:
+* Allow only one database to make changes to a certain table (or column) and all others only read it.
+* Do not delete replicated database classes, as those will still be present in old transactions even after deleting them.
+* Do not remove replicated database class properties, for the same reason.
+* Don't start replication until all applications whose data being replicated are fully loaded on the codehost.
