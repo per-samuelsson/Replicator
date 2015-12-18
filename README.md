@@ -47,3 +47,4 @@ Replicating data across a distributed system is an excellent [footgun](http://ww
 * Do not delete or rename replicated database classes, as they will still be referenced in old transactions.
 * Do not remove replicated database class properties, for the same reason.
 * Don't start replication until all applications whose data being replicated are fully loaded on the codehost.
+* Don't add tables to what's to be replicated if instances of the class have already been created and the log position has progressed past that point.
