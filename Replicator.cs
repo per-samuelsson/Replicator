@@ -51,6 +51,8 @@ namespace Replicator
         private HashSet<string> _filterTables = new HashSet<string>();
         private HashSet<string> _negativeCache = new HashSet<string>(); // filter URIs that have returned 404
 
+        private JsonSerializerSettings _serializerSettings = new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.Auto };
+
         public Replicator(bool isServer, DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
             _isServer = isServer;
@@ -311,7 +313,7 @@ namespace Replicator
             LogReadResult lrr = t.Result;
             if (FilterTransaction(lrr))
             {
-                _sender.SendStringAsync(JsonConvert.SerializeObject(lrr), _ct).ContinueWith(HandleSendResult);
+                _sender.SendStringAsync(JsonConvert.SerializeObject(lrr, _serializerSettings), _ct).ContinueWith(HandleSendResult);
             }
         }
 
@@ -332,14 +334,14 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body);
+                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
                     }
                 }
             }
             baseUri += "create/";
             if (!_negativeCache.Contains(baseUri))
             {
-                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record));
+                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
                 if (response == null || response.StatusCode == 404)
                 {
                     _negativeCache.Add(baseUri);
@@ -349,7 +351,7 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body);
+                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
                     }
                 }
                 else
@@ -378,14 +380,14 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body);
+                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
                     }
                 }
             }
             baseUri += "update/";
             if (!_negativeCache.Contains(baseUri))
             {
-                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record));
+                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
                 if (response == null || response.StatusCode == 404)
                 {
                     _negativeCache.Add(baseUri);
@@ -395,7 +397,7 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body);
+                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
                     }
                 }
                 else
@@ -424,14 +426,14 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body);
+                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
                     }
                 }
             }
             baseUri += "delete/";
             if (!_negativeCache.Contains(baseUri))
             {
-                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record));
+                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
                 if (response == null || response.StatusCode == 404)
                 {
                     _negativeCache.Add(baseUri);
@@ -441,7 +443,7 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body);
+                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
                     }
                 }
                 else
@@ -572,7 +574,7 @@ namespace Replicator
                         return;
                     }
 
-                    LogReadResult tran = JsonConvert.DeserializeObject<LogReadResult>(message);
+                    LogReadResult tran = JsonConvert.DeserializeObject<LogReadResult>(message, _serializerSettings);
                     Db.Transact(() =>
                     {
                         Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE DatabaseGuid = ?", PeerGuidString).First;
@@ -626,14 +628,14 @@ namespace Replicator
                         return;
                     }
                     PeerGuid = peerGuid;
-                    var reply = "!LPOS " + JsonConvert.SerializeObject(LastLogPosition);
+                    var reply = "!LPOS " + JsonConvert.SerializeObject(LastLogPosition, _serializerSettings);
                     _sender.SendStringAsync(reply, _ct).ContinueWith(HandleSendResult);
                     return;
                 }
 
                 if (message.StartsWith("!LPOS "))
                 {
-                    StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(6)));
+                    StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(6), _serializerSettings));
                     return;
                 }
             }
