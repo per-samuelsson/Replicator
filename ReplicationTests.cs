@@ -18,10 +18,12 @@ namespace Replicator
     {
         public ReplicationTests()
         {
-            Handle.GET("/Replicator/out/Replicator.ReplicationTest/{?}", (string dbGuid) =>
-            {
-                return 200;
-            });
+            // Allow InvoiceDemo stuff
+            Handle.GET("/Replicator/out/Invoice/{?}", (string dbGuid) => { return 200; });
+            Handle.GET("/Replicator/out/InvoiceRow/{?}", (string dbGuid) => { return 200; });
+
+            // Allow our own test table
+            Handle.GET("/Replicator/out/Replicator.ReplicationTest/{?}", (string dbGuid) => { return 200; });
 
             Handle.GET("/Replicator/test/insert/{?}/{?}", (int key, string value) => {
                 Db.Transact(() => {
