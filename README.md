@@ -22,14 +22,14 @@ The Replicator will prevent local feedback loops, meaning that when an incoming 
 
 The `TransactionLog` API will provide all non-system table transactions from a given log position. This includes transactions which may no longer be possible to perform. For instance, if the database class (table) or property (column) no longer exists. Also, it is usually desirable to filter out data which should not be distributed. This may be for a variety of reasons including legal, security, financial or simply to save bandwidth.
 
-The Replicator has a primitive filtering in place as it is, but it's planned to expand this to an opt-in mechanism using Starcounter handlers. For example, to allow updates for the table "MyCompany.MyApplication" to be sent out, you might add a handler like one of these:
+The Replicator has a filtering in place, which is an opt-in mechanism using Starcounter handlers. For example, to allow updates for the table "MyCompany.MyApplication" to be sent out, you add a handler like one of these:
 
 > `Handle.GET("/Replicator/out/MyCompany.MyApplication/{?}", (string destinationGuid) => {});`
 > `Handle.POST("/Replicator/out/MyCompany.MyApplication/update/{?}", (string destinationGuid) => {});`
 
-The GET handler would be for the simple use-case of allowing or denying all changes to a given table using only the destination database GUID, and should be fairly cheap to call. The POST handler would handle more complex scenarios, and would receive a serialized `Starcounter.TransactionLog.update_record_entry` in the body.
+The GET handler would be for the simple use-case of allowing or denying all changes to a given table using only the destination database GUID, and is fairly cheap to call. The POST handler can handle more complex scenarios, and receives a serialized `Starcounter.TransactionLog.update_record_entry` in the body.
 
-The handler would return status code `200 OK` to allow sending it, with an optional new `update_record_entry` in the body to send that instead, or `201 No Content` or higher to prevent it from being sent at all. The Replicator might also choose to cache calls that return a `404 Not Found` to improve performance.
+The handler must status code `200 OK` to allow sending it, with an optional new `update_record_entry` in the body to send that instead, or `201 No Content` or higher to prevent it from being sent at all. The Replicator will also cache calls that return a `404 Not Found` to improve performance.
 
 ## Use as backup solution
 
