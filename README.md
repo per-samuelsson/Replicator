@@ -39,6 +39,6 @@ You can use the Replicator to maintain a real-time copy of a database by simply 
 
 Replicating data across a distributed system is an excellent [footgun](http://www.urbandictionary.com/define.php?term=footgun). It's easy to end up in a situation where the global system state is inconsistent. How to organize your data flows to prevent this is outside the scope of this README, but some general advice may be in order to help prevent inconsistencies:
 * Allow only one database to make changes to a certain table (or column) and all others only read it.
-* Do not delete replicated database classes, as those will still be present in old transactions even after deleting them.
+* Do not delete or rename replicated database classes, as they will still be referenced in old transactions.
 * Do not remove replicated database class properties, for the same reason.
 * Don't start replication until all applications whose data being replicated are fully loaded on the codehost.
