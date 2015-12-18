@@ -29,7 +29,7 @@ The Replicator has a primitive filtering in place as it is, but it's planned to 
 
 The GET handler would be for the simple use-case of allowing or denying all changes to a given table using only the destination database GUID, and should be fairly cheap to call. The POST handler would handle more complex scenarios, and would receive a serialized `Starcounter.TransactionLog.update_record_entry` in the body.
 
-The handler would return status code `200 OK` to allow sending it, with an optional new `column_update[]` in the body to send that instead, or `201 No Content` or higher to prevent it from being sent at all. The Replicator might also choose to cache calls that return a `404 Not Found` to improve performance.
+The handler would return status code `200 OK` to allow sending it, with an optional new `update_record_entry` in the body to send that instead, or `201 No Content` or higher to prevent it from being sent at all. The Replicator might also choose to cache calls that return a `404 Not Found` to improve performance.
 
 ## Use as backup solution
 
