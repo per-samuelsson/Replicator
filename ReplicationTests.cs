@@ -18,6 +18,11 @@ namespace Replicator
     {
         public ReplicationTests()
         {
+            Handle.GET("/Replicator/out/Replicator.ReplicationTest/{?}", (string dbGuid) =>
+            {
+                return 200;
+            });
+
             Handle.GET("/Replicator/test/insert/{?}/{?}", (int key, string value) => {
                 Db.Transact(() => {
                     var foo = new ReplicationTest();

@@ -46,8 +46,10 @@ namespace Replicator
         private ConcurrentQueue<string> _input = new ConcurrentQueue<string>();
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
+        private DateTime _lastEmptyTransactionSend = DateTime.Now;
 
         private HashSet<string> _filterTables = new HashSet<string>();
+        private HashSet<string> _negativeCache = new HashSet<string>(); // filter URIs that have returned 404
 
         public Replicator(bool isServer, DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
@@ -313,6 +315,144 @@ namespace Replicator
             }
         }
 
+        private bool FilterCreate(string baseUri, ref create_record_entry record)
+        {
+            bool retv = false; // block replication by default
+            Response response;
+            if (!_negativeCache.Contains(baseUri))
+            {
+                response = Self.GET(baseUri + PeerGuidString);
+                if (response == null || response.StatusCode == 404)
+                {
+                    _negativeCache.Add(baseUri);
+                }
+                else if (response.StatusCode == 200)
+                {
+                    // 200 will allow replication unless POST forbids it
+                    retv = true;
+                    if (response.Body != null)
+                    {
+                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body);
+                    }
+                }
+            }
+            baseUri += "create/";
+            if (!_negativeCache.Contains(baseUri))
+            {
+                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record));
+                if (response == null || response.StatusCode == 404)
+                {
+                    _negativeCache.Add(baseUri);
+                }
+                else if (response.StatusCode == 200)
+                {
+                    retv = true;
+                    if (response.Body != null)
+                    {
+                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body);
+                    }
+                }
+                else
+                {
+                    // allow POST to override the GET
+                    retv = false;
+                }
+            }
+            return retv;
+        }
+
+        private bool FilterUpdate(string baseUri, ref update_record_entry record)
+        {
+            bool retv = false; // block replication by default
+            Response response;
+            if (!_negativeCache.Contains(baseUri))
+            {
+                response = Self.GET(baseUri + PeerGuidString);
+                if (response == null || response.StatusCode == 404)
+                {
+                    _negativeCache.Add(baseUri);
+                }
+                else if (response.StatusCode == 200)
+                {
+                    // 200 will allow replication unless POST forbids it
+                    retv = true;
+                    if (response.Body != null)
+                    {
+                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body);
+                    }
+                }
+            }
+            baseUri += "update/";
+            if (!_negativeCache.Contains(baseUri))
+            {
+                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record));
+                if (response == null || response.StatusCode == 404)
+                {
+                    _negativeCache.Add(baseUri);
+                }
+                else if (response.StatusCode == 200)
+                {
+                    retv = true;
+                    if (response.Body != null)
+                    {
+                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body);
+                    }
+                }
+                else
+                {
+                    // allow POST to override the GET
+                    retv = false;
+                }
+            }
+            return retv;
+        }
+
+        private bool FilterDelete(string baseUri, ref delete_record_entry record)
+        {
+            bool retv = false; // block replication by default
+            Response response;
+            if (!_negativeCache.Contains(baseUri))
+            {
+                response = Self.GET(baseUri + PeerGuidString);
+                if (response == null || response.StatusCode == 404)
+                {
+                    _negativeCache.Add(baseUri);
+                }
+                else if (response.StatusCode == 200)
+                {
+                    // 200 will allow replication unless POST forbids it
+                    retv = true;
+                    if (response.Body != null)
+                    {
+                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body);
+                    }
+                }
+            }
+            baseUri += "delete/";
+            if (!_negativeCache.Contains(baseUri))
+            {
+                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record));
+                if (response == null || response.StatusCode == 404)
+                {
+                    _negativeCache.Add(baseUri);
+                }
+                else if (response.StatusCode == 200)
+                {
+                    retv = true;
+                    if (response.Body != null)
+                    {
+                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body);
+                    }
+                }
+                else
+                {
+                    // allow POST to override the GET
+                    retv = false;
+                }
+            }
+            return retv;
+        }
+
         // Must run on a SC thread
         private bool FilterTransaction(LogReadResult lrr)
         {
@@ -321,74 +461,91 @@ namespace Replicator
                 var tran = lrr.transaction_data;
                 int index;
 
-                lock (_filterTables)
+                lock (_negativeCache)
                 {
                     index = 0;
                     while (index < tran.creates.Count)
                     {
-                        if (_filterTables.Contains(tran.creates[index].table))
+                        var record = tran.creates[index];
+                        if (record.table == "Replicator.Replication")
                         {
-                            if (tran.creates[index].table == "Replicator.Replication")
+                            for (int i = 0; i < record.columns.Length; i++)
                             {
-                                var columns = tran.creates[index].columns;
-                                for (int i = 0; i < columns.Length; i++)
+                                if (record.columns[i].name == "DatabaseGuid")
                                 {
-                                    if (columns[i].name == "DatabaseGuid")
-                                    {
-                                        if ((string)columns[i].value == PeerGuidString)
-                                            return false;
-                                    }
+                                    if ((string)record.columns[i].value == PeerGuidString)
+                                        return false;
                                 }
                             }
                             tran.creates.RemoveAt(index);
                         }
+                        if (FilterCreate("/Replicator/out/" + tran.creates[index].table + "/", ref record))
+                        {
+                            tran.creates[index] = record;
+                            index++;
+                        }
                         else
                         {
-                            index++;
+                            tran.creates.RemoveAt(index);
                         }
                     }
 
                     index = 0;
                     while (index < tran.updates.Count)
                     {
-                        if (_filterTables.Contains(tran.updates[index].table))
+                        var record = tran.updates[index];
+                        if (record.table == "Replicator.Replication")
                         {
-                            if (tran.updates[index].table == "Replicator.Replication")
+                            for (int i = 0; i < record.columns.Length; i++)
                             {
-                                var columns = tran.updates[index].columns;
-                                for (int i = 0; i < columns.Length; i++)
+                                if (record.columns[i].name == "DatabaseGuid")
                                 {
-                                    if (columns[i].name == "DatabaseGuid")
-                                    {
-                                        if ((string)columns[i].value == PeerGuidString)
-                                            return false;
-                                    }
+                                    if ((string)record.columns[i].value == PeerGuidString)
+                                        return false;
                                 }
                             }
                             tran.updates.RemoveAt(index);
                         }
+                        else if (FilterUpdate("/Replicator/out/" + tran.updates[index].table + "/", ref record))
+                        {
+                            tran.updates[index] = record;
+                            index++;
+                        }
                         else
                         {
-                            index++;
+                            tran.updates.RemoveAt(index);
                         }
                     }
 
                     index = 0;
                     while (index < tran.deletes.Count)
                     {
-                        if (_filterTables.Contains(tran.deletes[index].table))
+                        var record = tran.deletes[index];
+                        if (record.table == "Replicator.Replication")
                         {
                             tran.deletes.RemoveAt(index);
                         }
+                        if (FilterDelete("/Replicator/out/" + tran.deletes[index].table + "/", ref record))
+                        {
+                            tran.deletes[index] = record;
+                            index++;
+                        }
                         else
                         {
-                            index++;
+                            tran.deletes.RemoveAt(index);
                         }
                     }
                 }
 
                 if (tran.updates.Count > 0 || tran.creates.Count > 0 || tran.deletes.Count > 0)
                     return true;
+
+                // send empty transactions at regular intervals in order to update log position
+                if (DateTime.Now.Subtract(_lastEmptyTransactionSend).Seconds > 10)
+                {
+                    _lastEmptyTransactionSend = DateTime.Now;
+                    return true;
+                }
             }
             catch (Exception e)
             {
