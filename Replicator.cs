@@ -23,8 +23,6 @@ namespace Replicator
         // The GUID of the database
         public string DatabaseGuid;
         // and the last LogPosition we got from them
-        public ulong Address;
-        public ulong Signature;
         public ulong CommitId;
     }
 
@@ -188,8 +186,6 @@ namespace Replicator
                         Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.DatabaseGuid = ?", PeerGuidString).First;
                         if (repl != null)
                         {
-                            pos.address = repl.Address;
-                            pos.signature = repl.Signature;
                             pos.commit_id = repl.CommitId;
                         }
                     });
@@ -583,8 +579,6 @@ namespace Replicator
                             repl = new Replication()
                             {
                                 DatabaseGuid = PeerGuidString,
-                                Address = tran.continuation_position.address,
-                                Signature = tran.continuation_position.signature,
                                 CommitId = tran.continuation_position.commit_id,
                             };
                         }
@@ -593,8 +587,6 @@ namespace Replicator
                             // TODO: wait for @bigwad to export comparison for LogPosition
                             // so we can make sure the commit ID is progressing
                             repl.DatabaseGuid = PeerGuidString; // needed so it shows up in the outbound log
-                            repl.Address = tran.continuation_position.address;
-                            repl.Signature = tran.continuation_position.signature;
                             repl.CommitId = tran.continuation_position.commit_id;
                         }
                         _applicator.Apply(tran.transaction_data);
