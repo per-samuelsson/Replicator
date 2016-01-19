@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -21,6 +21,11 @@ namespace Replicator
             // Allow InvoiceDemo stuff
             Handle.GET("/Replicator/out/Invoice/{?}", (string dbGuid) => { return 200; });
             Handle.GET("/Replicator/out/InvoiceRow/{?}", (string dbGuid) => { return 200; });
+            
+            // Allow RetailDemo stuff
+            Handle.GET("/Replicator/out/ScRetailDemo.ClientStatsEntry/{?}", (string dbGuid) => { return 200; });
+            Handle.GET("/Replicator/out/ScRetailDemo.RetailCustomer/{?}", (string dbGuid) => { return 200; });
+            Handle.GET("/Replicator/out/ScRetailDemo.Account/{?}", (string dbGuid) => { return 200; });
 
             // Allow our own test table
             Handle.GET("/Replicator/out/Replicator.ReplicationTest/{?}", (string dbGuid) => { return 200; });
