@@ -49,7 +49,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Starcounter.TransactionLog">
-      <HintPath>..\level1\bin\Debug\Starcounter.TransactionLog.dll</HintPath>
+      <HintPath>..\..\Program Files\Starcounter\Starcounter.TransactionLog.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core">
@@ -94,6 +94,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ReplicationChild.cs" />
     <Compile Include="ReplicationParent.cs" />
+    <Compile Include="StringSerializer.cs" />
     <Compile Include="TypesInspector.cs" />
   </ItemGroup>
   <ItemGroup>

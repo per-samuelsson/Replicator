@@ -3,9 +3,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
+// using Newtonsoft.Json;
 using Starcounter;
 using Starcounter.TransactionLog;
+using System.Runtime.Serialization;
+using System.IO;
+using System.Text;
 
 namespace Replicator
 {
@@ -24,6 +27,28 @@ namespace Replicator
         public string DatabaseGuid;
         // and the last LogPosition we got from them
         public ulong CommitId;
+    }
+
+    public class TypeNameSerializationBinder : SerializationBinder
+    {
+        public string TypeFormat { get; private set; }
+
+        public TypeNameSerializationBinder(string typeFormat)
+        {
+            TypeFormat = typeFormat;
+        }
+
+        public override void BindToName(Type serializedType, out string assemblyName, out string typeName)
+        {
+            assemblyName = null;
+            typeName = serializedType.Name;
+        }
+
+        public override Type BindToType(string assemblyName, string typeName)
+        {
+            var resolvedTypeName = string.Format(TypeFormat, typeName);
+            return Type.GetType(resolvedTypeName, true);
+        }
     }
 
     public sealed class Replicator : IDisposable
@@ -49,7 +74,7 @@ namespace Replicator
         private HashSet<string> _filterTables = new HashSet<string>();
         private HashSet<string> _negativeCache = new HashSet<string>(); // filter URIs that have returned 404
 
-        private JsonSerializerSettings _serializerSettings = new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.Auto };
+        // private JsonSerializerSettings _serializerSettings;
 
         public Replicator(bool isServer, DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
@@ -65,6 +90,17 @@ namespace Replicator
             _applicator = new LogApplicator();
             _filterTables.Add("Replicator.Replication");
             _filterTables.Add("Replicator.Configuration");
+            /*
+            _serializerSettings = new JsonSerializerSettings
+            {
+                TypeNameHandling = TypeNameHandling.All,
+                NullValueHandling = NullValueHandling.Ignore,
+                MissingMemberHandling = MissingMemberHandling.Ignore,
+                Formatting = Formatting.None,
+                DateFormatHandling = DateFormatHandling.IsoDateFormat,
+                Binder = new TypeNameSerializationBinder("Starcounter.TransactionLog.{0}, Starcounter.TransactionLog"),
+            };
+            */
         }
 
         public bool IsConnected
@@ -178,7 +214,10 @@ namespace Replicator
         {
             get
             {
-                LogPosition pos = new LogPosition();
+                LogPosition pos = new LogPosition()
+                {
+                    commit_id = 0
+                };
                 if (IsPeerGuidSet)
                 {
                     Db.Transact(() =>
@@ -309,7 +348,8 @@ namespace Replicator
             LogReadResult lrr = t.Result;
             if (FilterTransaction(lrr))
             {
-                _sender.SendStringAsync(JsonConvert.SerializeObject(lrr, _serializerSettings), _ct).ContinueWith(HandleSendResult);
+                // _sender.SendStringAsync(JsonConvert.SerializeObject(lrr, _serializerSettings), _ct).ContinueWith(HandleSendResult);
+                _sender.SendStringAsync(StringSerializer.Serialize(new StringBuilder(), lrr).ToString(), _ct).ContinueWith(HandleSendResult);
             }
         }
 
@@ -330,14 +370,16 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
+                        // record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
+                        record = StringSerializer.DeserializeCreateRecordEntry(new StringReader(response.Body));
                     }
                 }
             }
             baseUri += "create/";
             if (!_negativeCache.Contains(baseUri))
             {
-                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
+                // response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
+                response = Self.POST(baseUri + PeerGuidString, StringSerializer.Serialize(new StringBuilder(), record).ToString());
                 if (response == null || response.StatusCode == 404)
                 {
                     _negativeCache.Add(baseUri);
@@ -347,7 +389,8 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
+                        // record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
+                        record = StringSerializer.DeserializeCreateRecordEntry(new StringReader(response.Body));
                     }
                 }
                 else
@@ -376,14 +419,16 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
+                        // record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
+                        record = StringSerializer.DeserializeUpdateRecordEntry(new StringReader(response.Body));
                     }
                 }
             }
             baseUri += "update/";
             if (!_negativeCache.Contains(baseUri))
             {
-                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
+                // response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
+                response = Self.POST(baseUri + PeerGuidString, StringSerializer.Serialize(new StringBuilder(), record).ToString());
                 if (response == null || response.StatusCode == 404)
                 {
                     _negativeCache.Add(baseUri);
@@ -393,7 +438,8 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
+                        // record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
+                        record = StringSerializer.DeserializeUpdateRecordEntry(new StringReader(response.Body));
                     }
                 }
                 else
@@ -422,14 +468,16 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
+                        // record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
+                        record = StringSerializer.DeserializeDeleteRecordEntry(new StringReader(response.Body));
                     }
                 }
             }
             baseUri += "delete/";
             if (!_negativeCache.Contains(baseUri))
             {
-                response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
+                // response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
+                response = Self.POST(baseUri + PeerGuidString, StringSerializer.Serialize(new StringBuilder(), record).ToString());
                 if (response == null || response.StatusCode == 404)
                 {
                     _negativeCache.Add(baseUri);
@@ -439,7 +487,8 @@ namespace Replicator
                     retv = true;
                     if (response.Body != null)
                     {
-                        record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
+                        // record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
+                        record = StringSerializer.DeserializeDeleteRecordEntry(new StringReader(response.Body));
                     }
                 }
                 else
@@ -570,7 +619,8 @@ namespace Replicator
                         return;
                     }
 
-                    LogReadResult tran = JsonConvert.DeserializeObject<LogReadResult>(message, _serializerSettings);
+                    // LogReadResult tran = JsonConvert.DeserializeObject<LogReadResult>(message, _serializerSettings);
+                    LogReadResult tran = StringSerializer.DeserializeLogReadResult(new StringReader(message));
                     Db.Transact(() =>
                     {
                         Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE DatabaseGuid = ?", PeerGuidString).First;
@@ -620,14 +670,18 @@ namespace Replicator
                         return;
                     }
                     PeerGuid = peerGuid;
-                    var reply = "!LPOS " + JsonConvert.SerializeObject(LastLogPosition, _serializerSettings);
+                    // var reply = "!LPOS " + JsonConvert.SerializeObject(LastLogPosition, _serializerSettings);
+                    var reply = "!LPOS " + StringSerializer.Serialize(new StringBuilder(), LastLogPosition).ToString();
                     _sender.SendStringAsync(reply, _ct).ContinueWith(HandleSendResult);
                     return;
                 }
 
                 if (message.StartsWith("!LPOS "))
                 {
-                    StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(6), _serializerSettings));
+                    // StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(6), _serializerSettings));
+                    var sr = new StringReader(message);
+                    for (int i = 0; i < 6; i++) sr.Read(); // skip first 6 chars
+                    StartReplication(StringSerializer.DeserializeLogPosition(sr));
                     return;
                 }
             }
