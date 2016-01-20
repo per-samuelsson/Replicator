@@ -249,7 +249,7 @@ namespace Replicator
             Db.Transact(() => { GetConfiguration(); }); // ensure that configuration object is created
             Status = "Not connected.";
             new HttpHandlers();
-            new ReplicationTests();
+            // new ReplicationTests.ReplicationTests();
             _server = new ReplicationParent(_servermanager, _cts.Token);
 
             foreach (var arg in args)
