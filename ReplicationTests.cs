@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Starcounter;
 
-namespace Replicator
+namespace ReplicationTests
 {
     [Database]
     public class ReplicationTest
@@ -28,7 +28,7 @@ namespace Replicator
             Handle.GET("/Replicator/out/ScRetailDemo.Account/{?}", (string dbGuid) => { return 200; });
 
             // Allow our own test table
-            Handle.GET("/Replicator/out/Replicator.ReplicationTest/{?}", (string dbGuid) => { return 200; });
+            Handle.GET("/Replicator/out/ReplicationTests.ReplicationTest/{?}", (string dbGuid) => { return 200; });
 
             Handle.GET("/Replicator/test/insert/{?}/{?}", (int key, string value) => {
                 Db.Transact(() => {
@@ -43,7 +43,7 @@ namespace Replicator
                 int count = 0;
                 Db.Transact(() =>
                 {
-                    foreach (ReplicationTest foo in Db.SQL<ReplicationTest>("SELECT f FROM Replicator.ReplicationTest f WHERE f.Key = ?", key))
+                    foreach (ReplicationTest foo in Db.SQL<ReplicationTest>("SELECT f FROM ReplicationTests.ReplicationTest f WHERE f.Key = ?", key))
                     {
                         foo.Value = value;
                         count++;
@@ -62,7 +62,7 @@ namespace Replicator
                 {
                     Db.Transact(() =>
                     {
-                        foreach (ReplicationTest foo in Db.SQL<ReplicationTest>("SELECT f FROM Replicator.ReplicationTest f WHERE f.Key = ?", key))
+                        foreach (ReplicationTest foo in Db.SQL<ReplicationTest>("SELECT f FROM ReplicationTests.ReplicationTest f WHERE f.Key = ?", key))
                         {
                             foo.Delete();
                             count++;
