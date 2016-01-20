@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-// using Newtonsoft.Json;
 using Starcounter;
 using Starcounter.TransactionLog;
 using System.Runtime.Serialization;
@@ -63,7 +62,6 @@ namespace Replicator
         private Guid _peerGuid;
         private string _peerGuidString;
         private ILogReader _reader = null;
-
         private LogApplicator _applicator = null;
         private SemaphoreSlim _inputSem = new SemaphoreSlim(1);
         private ConcurrentQueue<string> _input = new ConcurrentQueue<string>();
@@ -71,10 +69,8 @@ namespace Replicator
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
         private DateTime _lastEmptyTransactionSend = DateTime.Now;
 
-        private HashSet<string> _filterTables = new HashSet<string>();
-        private HashSet<string> _negativeCache = new HashSet<string>(); // filter URIs that have returned 404
-
-        // private JsonSerializerSettings _serializerSettings;
+        private Dictionary<string, ulong> _prioMap = new Dictionary<string, ulong>(); // per-class prio overrides
+        private IReplicationFilter _filter = null;
 
         public Replicator(bool isServer, DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
@@ -86,21 +82,17 @@ namespace Replicator
             _ct = ct;
             _selfGuid = Program.GetDatabaseGuid();
             PeerGuid = Guid.Empty;
+            DefaultPriority = 1; // default prio (0 = don't replicate, 1 = lowest prio)
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), _ct).ContinueWith(HandleSendResult);
             _applicator = new LogApplicator();
-            _filterTables.Add("Replicator.Replication");
-            _filterTables.Add("Replicator.Configuration");
-            /*
-            _serializerSettings = new JsonSerializerSettings
-            {
-                TypeNameHandling = TypeNameHandling.All,
-                NullValueHandling = NullValueHandling.Ignore,
-                MissingMemberHandling = MissingMemberHandling.Ignore,
-                Formatting = Formatting.None,
-                DateFormatHandling = DateFormatHandling.IsoDateFormat,
-                Binder = new TypeNameSerializationBinder("Starcounter.TransactionLog.{0}, Starcounter.TransactionLog"),
-            };
-            */
+            _prioMap.Add("Replicator.Replication", 0);
+            _prioMap.Add("Replicator.Configuration", 0);
+        }
+
+        public ulong DefaultPriority
+        {
+            get;
+            set;
         }
 
         public bool IsConnected
@@ -348,156 +340,24 @@ namespace Replicator
             LogReadResult lrr = t.Result;
             if (FilterTransaction(lrr))
             {
-                // _sender.SendStringAsync(JsonConvert.SerializeObject(lrr, _serializerSettings), _ct).ContinueWith(HandleSendResult);
                 _sender.SendStringAsync(StringSerializer.Serialize(new StringBuilder(), lrr).ToString(), _ct).ContinueWith(HandleSendResult);
             }
         }
 
-        private bool FilterCreate(string baseUri, ref create_record_entry record)
+        private bool FilterLoops(string table, column_update[] columns)
         {
-            bool retv = false; // block replication by default
-            Response response;
-            if (!_negativeCache.Contains(baseUri))
+            if (table == "Replicator.Replication")
             {
-                response = Self.GET(baseUri + PeerGuidString);
-                if (response == null || response.StatusCode == 404)
+                for (int i = 0; i < columns.Length; i++)
                 {
-                    _negativeCache.Add(baseUri);
-                }
-                else if (response.StatusCode == 200)
-                {
-                    // 200 will allow replication unless POST forbids it
-                    retv = true;
-                    if (response.Body != null)
+                    if (columns[i].name == "DatabaseGuid")
                     {
-                        // record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
-                        record = StringSerializer.DeserializeCreateRecordEntry(new StringReader(response.Body));
+                        if ((string)columns[i].value == PeerGuidString)
+                            return true;
                     }
                 }
             }
-            baseUri += "create/";
-            if (!_negativeCache.Contains(baseUri))
-            {
-                // response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
-                response = Self.POST(baseUri + PeerGuidString, StringSerializer.Serialize(new StringBuilder(), record).ToString());
-                if (response == null || response.StatusCode == 404)
-                {
-                    _negativeCache.Add(baseUri);
-                }
-                else if (response.StatusCode == 200)
-                {
-                    retv = true;
-                    if (response.Body != null)
-                    {
-                        // record = JsonConvert.DeserializeObject<create_record_entry>(response.Body, _serializerSettings);
-                        record = StringSerializer.DeserializeCreateRecordEntry(new StringReader(response.Body));
-                    }
-                }
-                else
-                {
-                    // allow POST to override the GET
-                    retv = false;
-                }
-            }
-            return retv;
-        }
-
-        private bool FilterUpdate(string baseUri, ref update_record_entry record)
-        {
-            bool retv = false; // block replication by default
-            Response response;
-            if (!_negativeCache.Contains(baseUri))
-            {
-                response = Self.GET(baseUri + PeerGuidString);
-                if (response == null || response.StatusCode == 404)
-                {
-                    _negativeCache.Add(baseUri);
-                }
-                else if (response.StatusCode == 200)
-                {
-                    // 200 will allow replication unless POST forbids it
-                    retv = true;
-                    if (response.Body != null)
-                    {
-                        // record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
-                        record = StringSerializer.DeserializeUpdateRecordEntry(new StringReader(response.Body));
-                    }
-                }
-            }
-            baseUri += "update/";
-            if (!_negativeCache.Contains(baseUri))
-            {
-                // response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
-                response = Self.POST(baseUri + PeerGuidString, StringSerializer.Serialize(new StringBuilder(), record).ToString());
-                if (response == null || response.StatusCode == 404)
-                {
-                    _negativeCache.Add(baseUri);
-                }
-                else if (response.StatusCode == 200)
-                {
-                    retv = true;
-                    if (response.Body != null)
-                    {
-                        // record = JsonConvert.DeserializeObject<update_record_entry>(response.Body, _serializerSettings);
-                        record = StringSerializer.DeserializeUpdateRecordEntry(new StringReader(response.Body));
-                    }
-                }
-                else
-                {
-                    // allow POST to override the GET
-                    retv = false;
-                }
-            }
-            return retv;
-        }
-
-        private bool FilterDelete(string baseUri, ref delete_record_entry record)
-        {
-            bool retv = false; // block replication by default
-            Response response;
-            if (!_negativeCache.Contains(baseUri))
-            {
-                response = Self.GET(baseUri + PeerGuidString);
-                if (response == null || response.StatusCode == 404)
-                {
-                    _negativeCache.Add(baseUri);
-                }
-                else if (response.StatusCode == 200)
-                {
-                    // 200 will allow replication unless POST forbids it
-                    retv = true;
-                    if (response.Body != null)
-                    {
-                        // record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
-                        record = StringSerializer.DeserializeDeleteRecordEntry(new StringReader(response.Body));
-                    }
-                }
-            }
-            baseUri += "delete/";
-            if (!_negativeCache.Contains(baseUri))
-            {
-                // response = Self.POST(baseUri + PeerGuidString, JsonConvert.SerializeObject(record, _serializerSettings));
-                response = Self.POST(baseUri + PeerGuidString, StringSerializer.Serialize(new StringBuilder(), record).ToString());
-                if (response == null || response.StatusCode == 404)
-                {
-                    _negativeCache.Add(baseUri);
-                }
-                else if (response.StatusCode == 200)
-                {
-                    retv = true;
-                    if (response.Body != null)
-                    {
-                        // record = JsonConvert.DeserializeObject<delete_record_entry>(response.Body, _serializerSettings);
-                        record = StringSerializer.DeserializeDeleteRecordEntry(new StringReader(response.Body));
-                    }
-                }
-                else
-                {
-                    // allow POST to override the GET
-                    retv = false;
-                }
-            }
-            return retv;
+            return false;
         }
 
         // Must run on a SC thread
@@ -508,25 +368,19 @@ namespace Replicator
                 var tran = lrr.transaction_data;
                 int index;
 
-                lock (_negativeCache)
+                lock (_prioMap)
                 {
                     index = 0;
                     while (index < tran.creates.Count)
                     {
                         var record = tran.creates[index];
-                        if (record.table == "Replicator.Replication")
+                        if (record.table.StartsWith("Replicator."))
                         {
-                            for (int i = 0; i < record.columns.Length; i++)
-                            {
-                                if (record.columns[i].name == "DatabaseGuid")
-                                {
-                                    if ((string)record.columns[i].value == PeerGuidString)
-                                        return false;
-                                }
-                            }
+                            if (FilterLoops(record.table, record.columns))
+                                return false;
                             tran.creates.RemoveAt(index);
                         }
-                        else if (FilterCreate("/Replicator/out/" + tran.creates[index].table + "/", ref record))
+                        else if (_filter == null || _filter.FilterCreate(PeerGuidString, ref record) > 0)
                         {
                             tran.creates[index] = record;
                             index++;
@@ -541,19 +395,13 @@ namespace Replicator
                     while (index < tran.updates.Count)
                     {
                         var record = tran.updates[index];
-                        if (record.table == "Replicator.Replication")
+                        if (record.table.StartsWith("Replicator."))
                         {
-                            for (int i = 0; i < record.columns.Length; i++)
-                            {
-                                if (record.columns[i].name == "DatabaseGuid")
-                                {
-                                    if ((string)record.columns[i].value == PeerGuidString)
-                                        return false;
-                                }
-                            }
-                            tran.updates.RemoveAt(index);
+                            if (FilterLoops(record.table, record.columns))
+                                return false;
+                            tran.creates.RemoveAt(index);
                         }
-                        else if (FilterUpdate("/Replicator/out/" + tran.updates[index].table + "/", ref record))
+                        else if (_filter == null || _filter.FilterUpdate(PeerGuidString, ref record) > 0)
                         {
                             tran.updates[index] = record;
                             index++;
@@ -568,11 +416,11 @@ namespace Replicator
                     while (index < tran.deletes.Count)
                     {
                         var record = tran.deletes[index];
-                        if (record.table == "Replicator.Replication")
+                        if (record.table.StartsWith("Replicator."))
                         {
                             tran.deletes.RemoveAt(index);
                         }
-                        else if (FilterDelete("/Replicator/out/" + tran.deletes[index].table + "/", ref record))
+                        else if (_filter == null || _filter.FilterDelete(PeerGuidString, ref record) > 0)
                         {
                             tran.deletes[index] = record;
                             index++;
@@ -608,8 +456,6 @@ namespace Replicator
         {
             try
             {
-                Console.WriteLine("Replicator {0}: Received from {1}: \"{2}\"", _selfGuid, PeerGuidString, message);
-
                 if (message[0] != '!')
                 {
                     // Transaction processing
@@ -619,7 +465,6 @@ namespace Replicator
                         return;
                     }
 
-                    // LogReadResult tran = JsonConvert.DeserializeObject<LogReadResult>(message, _serializerSettings);
                     LogReadResult tran = StringSerializer.DeserializeLogReadResult(new StringReader(message));
                     Db.Transact(() =>
                     {
@@ -670,7 +515,6 @@ namespace Replicator
                         return;
                     }
                     PeerGuid = peerGuid;
-                    // var reply = "!LPOS " + JsonConvert.SerializeObject(LastLogPosition, _serializerSettings);
                     var reply = "!LPOS " + StringSerializer.Serialize(new StringBuilder(), LastLogPosition).ToString();
                     _sender.SendStringAsync(reply, _ct).ContinueWith(HandleSendResult);
                     return;
@@ -678,7 +522,6 @@ namespace Replicator
 
                 if (message.StartsWith("!LPOS "))
                 {
-                    // StartReplication(JsonConvert.DeserializeObject<LogPosition>(message.Substring(6), _serializerSettings));
                     var sr = new StringReader(message);
                     for (int i = 0; i < 6; i++) sr.Read(); // skip first 6 chars
                     StartReplication(StringSerializer.DeserializeLogPosition(sr));

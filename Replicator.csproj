@@ -80,6 +80,7 @@
     <Compile Include="Partials\Status.json.cs">
       <DependentUpon>Status.json</DependentUpon>
     </Compile>
+    <Compile Include="ReplicationFilterSample.cs" />
     <Compile Include="ReplicationTests.cs" />
     <Compile Include="Replicator.cs" />
     <Compile Include="Program.cs" />
