@@ -380,14 +380,22 @@ namespace Replicator
                                 return false;
                             tran.creates.RemoveAt(index);
                         }
-                        else if (_filter == null || _filter.FilterCreate(PeerGuidString, ref record) > 0)
-                        {
-                            tran.creates[index] = record;
-                            index++;
-                        }
                         else
                         {
-                            tran.creates.RemoveAt(index);
+                            ulong p = DefaultPriority;
+                            if (_filter != null)
+                            {
+                                p = _filter.FilterCreate(PeerGuidString, ref record);
+                            }
+                            if (p == 0)
+                            {
+                                tran.creates.RemoveAt(index);
+                            }
+                            else
+                            {
+                                tran.creates[index] = record;
+                                index++;
+                            }
                         }
                     }
 
@@ -401,14 +409,22 @@ namespace Replicator
                                 return false;
                             tran.creates.RemoveAt(index);
                         }
-                        else if (_filter == null || _filter.FilterUpdate(PeerGuidString, ref record) > 0)
-                        {
-                            tran.updates[index] = record;
-                            index++;
-                        }
                         else
                         {
-                            tran.updates.RemoveAt(index);
+                            ulong p = DefaultPriority;
+                            if (_filter != null)
+                            {
+                                p = _filter.FilterUpdate(PeerGuidString, ref record);
+                            }
+                            if (p == 0)
+                            {
+                                tran.creates.RemoveAt(index);
+                            }
+                            else
+                            {
+                                tran.updates[index] = record;
+                                index++;
+                            }
                         }
                     }
 
@@ -420,14 +436,22 @@ namespace Replicator
                         {
                             tran.deletes.RemoveAt(index);
                         }
-                        else if (_filter == null || _filter.FilterDelete(PeerGuidString, ref record) > 0)
-                        {
-                            tran.deletes[index] = record;
-                            index++;
-                        }
                         else
                         {
-                            tran.deletes.RemoveAt(index);
+                            ulong p = DefaultPriority;
+                            if (_filter != null)
+                            {
+                                p = _filter.FilterDelete(PeerGuidString, ref record);
+                            }
+                            if (p == 0)
+                            {
+                                tran.deletes.RemoveAt(index);
+                            }
+                            else
+                            {
+                                tran.deletes[index] = record;
+                                index++;
+                            }
                         }
                     }
                 }
