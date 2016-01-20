@@ -7,6 +7,12 @@ using Starcounter.TransactionLog;
 namespace Replicator {
     partial class Settings : Partial, IBound<Configuration> {
 
+        protected override void OnData()
+        {
+            base.OnData();
+            this.StatusPartial.Enabled = Program.ReplicationEnabled;
+        }
+
         void Handle(Input.ParentUri Action)
         {
             this.Data.ParentUri = Action.Value;

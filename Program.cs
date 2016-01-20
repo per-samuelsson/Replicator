@@ -244,13 +244,32 @@ namespace Replicator
             Status = "Not connected.";
         }
 
-        static void Main()
+        static void Main(string[] args)
         {
             Db.Transact(() => { GetConfiguration(); }); // ensure that configuration object is created
             Status = "Not connected.";
             new HttpHandlers();
             new ReplicationTests();
             _server = new ReplicationParent(_servermanager, _cts.Token);
+
+            foreach (var arg in args)
+            {
+                if (arg.Equals("@enabled", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    // Enable the replicator. This will effectively connect
+                    // to any configured parent.
+                    Program.ReplicationEnabled = true;
+                }
+                else if (false)
+                {
+                    // Support "--replicateall"? "--parent=ip:port"?
+                    // TODO:
+                }
+                else
+                {
+                    Console.WriteLine("Warning: Ignoring unrecognized argument '{0}'", arg);
+                }
+            }
         }
     }
 }
