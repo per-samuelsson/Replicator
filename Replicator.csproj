@@ -67,16 +67,12 @@
   <ItemGroup>
     <Compile Include="IReplicationFilter.cs" />
     <Compile Include="HttpHandlers.cs" />
-    <Compile Include="MockLogApplicator.cs" />
     <Compile Include="Partials\Home.json.cs">
       <DependentUpon>Home.json</DependentUpon>
     </Compile>
     <Compile Include="Partials\Master.json.cs">
       <DependentUpon>Master.json</DependentUpon>
     </Compile>
-    <Compile Include="MockLogManager.cs" />
-    <Compile Include="MockLogReader.cs" />
-    <Compile Include="MockLogTransaction.cs" />
     <Compile Include="Partials\Partial.cs" />
     <Compile Include="Partials\Settings.json.cs">
       <DependentUpon>Settings.json</DependentUpon>
