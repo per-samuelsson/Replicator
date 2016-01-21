@@ -88,6 +88,7 @@
     <Compile Include="ReplicationChild.cs" />
     <Compile Include="ReplicationParent.cs" />
     <Compile Include="StringSerializer.cs" />
+    <Compile Include="SweOffshore\SweOffshoreSettings.cs" />
     <Compile Include="TypesInspector.cs" />
   </ItemGroup>
   <ItemGroup>
