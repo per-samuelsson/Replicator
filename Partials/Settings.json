@@ -3,7 +3,8 @@
   "StatusPartial": {
     "$": { "Reuse": "Status" }
   },
-  "DatabaseGuid":  "",
+  "DatabaseGuid": "",
+  "DatabaseKeyRange": "",
   "ParentUri$": "",
   "ReconnectMinimumWaitSeconds$": 0,
   "ReconnectMaximumWaitSeconds$": 0

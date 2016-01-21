@@ -12,6 +12,12 @@
                 </div>
             </div>
             <div class="form-group">
+                <label for="keyrange" class="col-sm-3 control-label">Database key range</label>
+                <div class="col-sm-9">
+                    <input type="text" class="form-control" id="keyrange" readonly placeholder="{{model.DatabaseKeyRange}}" value="{{model.DatabaseKeyRange}}">
+                </div>
+            </div>
+            <div class="form-group">
                 <label for="parentUri" class="col-sm-3 control-label">Parent URI</label>
                 <div class="col-sm-9">
                     <input type="text" class="form-control" id="parentUri" placeholder="Parent URI" value="{{model.ParentUri$::change}}">

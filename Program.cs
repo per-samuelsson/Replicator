@@ -121,6 +121,15 @@ namespace Replicator
             }
         }
 
+        public static string ConfiguredDatabaseKeyRangeString
+        {
+            get
+            {
+                var env = Db.Environment;
+                return string.Format("{0}-{1}", env.FirstUserOid, env.LastUserOid);
+            }
+        }
+
         static public ParentStatus ParentStatus
         {
             get { return _parentStatus; }
@@ -246,6 +255,11 @@ namespace Replicator
 
         static void Main(string[] args)
         {
+            Console.WriteLine("Starting replicator in {0}. Configured key range: {1}", 
+                Db.Environment.DatabaseName, 
+                ConfiguredDatabaseKeyRangeString
+                );
+
             Db.Transact(() => { GetConfiguration(); }); // ensure that configuration object is created
             Status = "Not connected.";
 
