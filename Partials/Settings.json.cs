@@ -5,7 +5,17 @@ using Starcounter.Internal;
 using Starcounter.TransactionLog;
 
 namespace Replicator {
+
     partial class Settings : Partial, IBound<Configuration> {
+        static Settings()
+        {
+            DefaultTemplate.DatabaseKeyRange.Bind = "DatabaseKeyRangeString";
+        }
+
+        public string DatabaseKeyRangeString
+        {
+            get { return Program.ConfiguredDatabaseKeyRangeString; }
+        }
 
         protected override void OnData()
         {
