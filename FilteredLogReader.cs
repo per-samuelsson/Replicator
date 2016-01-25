@@ -121,11 +121,6 @@ namespace Replicator
             return minTableCommitId;
         }
 
-        private bool FilterReplication(string tableName, column_update[] columns)
-        {
-
-        }
-
         private bool FilterLoops(column_update[] columns)
         {
             for (int i = 0; i < columns.Length; i++)
