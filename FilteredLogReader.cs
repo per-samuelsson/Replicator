@@ -121,6 +121,11 @@ namespace Replicator
             return minTableCommitId;
         }
 
+        private bool FilterReplication(string tableName, column_update[] columns)
+        {
+
+        }
+
         private bool FilterLoops(column_update[] columns)
         {
             for (int i = 0; i < columns.Length; i++)
@@ -169,10 +174,12 @@ namespace Replicator
             while (index < tran.creates.Count)
             {
                 var record = tran.creates[index];
-                if (record.table == "Replicator.Replication")
+                if (record.table.StartsWith("Replicator."))
                 {
-                    if (FilterLoops(record.columns))
+                    if (record.table == "Replicator.Replication" && FilterLoops(record.columns))
+                    {
                         return true;
+                    }
                     tran.creates.RemoveAt(index);
                     continue;
                 }
@@ -188,10 +195,12 @@ namespace Replicator
             while (index < tran.updates.Count)
             {
                 var record = tran.updates[index];
-                if (record.table == "Replicator.Replication")
+                if (record.table.StartsWith("Replicator."))
                 {
-                    if (FilterLoops(record.columns))
+                    if (record.table == "Replicator.Replication" && FilterLoops(record.columns))
+                    {
                         return true;
+                    }
                     tran.updates.RemoveAt(index);
                     continue;
                 }
@@ -207,7 +216,7 @@ namespace Replicator
             while (index < tran.deletes.Count)
             {
                 var record = tran.deletes[index];
-                if (record.table == "Replicator.Replication")
+                if (record.table.StartsWith("Replicator."))
                 {
                     tran.deletes.RemoveAt(index);
                     continue;
