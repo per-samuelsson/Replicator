@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Starcounter;
 using Starcounter.TransactionLog;
-using System.Runtime.Serialization;
 using System.IO;
 using System.Text;
 
@@ -37,6 +36,7 @@ namespace Replicator
         private Guid _selfGuid;
         private Guid _peerGuid;
         private LogApplicator _applicator = null;
+        private bool _isQuitting = false;
 
         private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
         private Dictionary<string, ulong> _peerTablePositions = null;
@@ -476,9 +476,80 @@ namespace Replicator
             }
         }
 
+        private void ForAllTablesInTransaction(LogReadResult tran, Action<string> action)
+        {
+            for (int index = tran.transaction_data.creates.Count - 1; index >= 0; index--)
+                action(tran.transaction_data.creates[index].table);
+            for (int index = tran.transaction_data.updates.Count - 1; index >= 0; index--)
+                action(tran.transaction_data.updates[index].table);
+            for (int index = tran.transaction_data.deletes.Count - 1; index >= 0; index--)
+                action(tran.transaction_data.deletes[index].table);
+            return;
+        }
+
+        // Must run on a SC thread
+        private void ProcessIncomingTransaction(LogReadResult tran)
+        {
+            try
+            {
+                Db.Transact(() =>
+                {
+                    ulong commitId = tran.continuation_position.commit_id;
+                    if (_tableFilter == null)
+                    {
+                        UpdateCommitId("", commitId);
+                    }
+                    else
+                    {
+                        ForAllTablesInTransaction(tran, (tableName) => UpdateCommitId(tableName, commitId));
+                    }
+                    _applicator.Apply(tran.transaction_data);
+                });
+            }
+            catch (Exception e)
+            {
+                uint code;
+                // handle ScErrTableNotFound (SCERR4230)
+                if (ErrorCode.TryGetCode(e, out code))
+                {
+                    if (code == 4230)
+                    {
+                        // Table not found, look for stuff that seems missing
+                        var tableset = new HashSet<string>();
+                        ForAllTablesInTransaction(tran, (tableName) => tableset.Add(tableName));
+                        Db.Transact(() =>
+                        {
+                            foreach (Starcounter.Metadata.ClrClass cc in Db.SQL<Starcounter.Metadata.ClrClass>("SELECT cc FROM Starcounter.Metadata.ClrClass cc"))
+                            {
+                                tableset.Remove(cc.FullClassName);
+                            }
+                        });
+                        if (tableset.Count > 0)
+                        {
+                            var sb = new StringBuilder();
+                            sb.Append("Class not loaded:");
+                            foreach (var tableName in tableset)
+                            {
+                                sb.Append(' ');
+                                sb.Append(tableName);
+                            }
+                            Quit(sb.ToString());
+                            return;
+                        }
+                    }
+                }
+                throw e;
+            }
+        }
+
         // Must run on a SC thread
         private void ProcessStringMessage(string message)
         {
+            if (_isQuitting)
+            {
+                return;
+            }
+
             try
             {
                 if (message[0] != '!')
@@ -489,26 +560,7 @@ namespace Replicator
                         Quit("peer GUID not set");
                         return;
                     }
-
-                    LogReadResult tran = StringSerializer.DeserializeLogReadResult(new StringReader(message));
-                    Db.Transact(() =>
-                    {
-                        ulong commitId = tran.continuation_position.commit_id;
-                        if (_tableFilter == null)
-                        {
-                            UpdateCommitId("", commitId);
-                        }
-                        else
-                        {
-                            for (int index = tran.transaction_data.creates.Count - 1; index >= 0; index--)
-                                UpdateCommitId(tran.transaction_data.creates[index].table, commitId);
-                            for (int index = tran.transaction_data.updates.Count - 1; index >= 0; index--)
-                                UpdateCommitId(tran.transaction_data.updates[index].table, commitId);
-                            for (int index = tran.transaction_data.deletes.Count - 1; index >= 0; index--)
-                                UpdateCommitId(tran.transaction_data.deletes[index].table, commitId);
-                        }
-                        _applicator.Apply(tran.transaction_data);
-                    });
+                    ProcessIncomingTransaction(StringSerializer.DeserializeLogReadResult(new StringReader(message)));
                     return;
                 }
 
@@ -626,14 +678,18 @@ namespace Replicator
         // Must run on a SC thread
         public void Quit(string error = "")
         {
-            _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith((t1) => {
-                _dbsess.RunAsync(() => {
-                    _sender.CloseAsync((error == "") ? 1000 : 4000, error, CancellationToken).ContinueWith((t2) =>
-                    {
-                        Dispose();
+            if (!_isQuitting)
+            {
+                _isQuitting = true;
+                _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith((t1) => {
+                    _dbsess.RunAsync(() => {
+                        _sender.CloseAsync((error == "") ? 1000 : 4000, error, CancellationToken).ContinueWith((t2) =>
+                        {
+                            Dispose();
+                        });
                     });
                 });
-            });
+            }
         }
 
         public void Dispose()
