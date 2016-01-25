@@ -21,7 +21,7 @@ namespace Replicator
 
         public ulong AllowPriority { get; set; }
 
-        public ulong FilterCreate(string destination, ref create_record_entry record)
+        public ulong FilterCreate(string destination, create_record_entry record)
         {
             string baseUri = "/Replicator/out/" + record.table + "/";
             ulong retv = 0; // block replication by default
@@ -71,7 +71,7 @@ namespace Replicator
             return retv;
         }
 
-        public ulong FilterUpdate(string destination, ref update_record_entry record)
+        public ulong FilterUpdate(string destination, update_record_entry record)
         {
             string baseUri = "/Replicator/out/" + record.table + "/";
             ulong retv = 0; // block replication by default
@@ -121,7 +121,7 @@ namespace Replicator
             return retv;
         }
 
-        public ulong FilterDelete(string destination, ref delete_record_entry record)
+        public ulong FilterDelete(string destination, delete_record_entry record)
         {
             string baseUri = "/Replicator/out/" + record.table + "/";
             ulong retv = 0; // block replication by default
