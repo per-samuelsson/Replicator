@@ -509,12 +509,11 @@ namespace Replicator
             catch (Exception e)
             {
                 uint code;
-                // handle ScErrTableNotFound (SCERR4230)
+                // Special handling for ScErrTableNotFound (SCERR4230) and ScErrSchemaCodeMismatch (SCERR4177)
                 if (ErrorCode.TryGetCode(e, out code))
                 {
-                    if (code == 4230)
+                    if (code == 4230 || code == 4177)
                     {
-                        // Table not found, look for stuff that seems missing
                         var tableset = new HashSet<string>();
                         ForAllTablesInTransaction(tran, (tableName) => tableset.Add(tableName));
                         Db.Transact(() =>
