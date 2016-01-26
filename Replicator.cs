@@ -434,7 +434,7 @@ namespace Replicator
                     StartReplication();
                     return;
                 }
-            }
+           }
             catch (Exception e)
             {
                 Console.WriteLine("Replicator: \"{0}\": {1}", message, e);
@@ -501,9 +501,21 @@ namespace Replicator
             if (!_isQuitting)
             {
                 _isQuitting = true;
+
+                int firstNewLine = error.IndexOf('\n');
+                string closeStatus = (firstNewLine < 0) ? error : error.Substring(0, firstNewLine);
+                if (closeStatus.Length > 25)
+                {
+                    closeStatus = closeStatus.Substring(0, 123);
+                    while (Encoding.UTF8.GetByteCount(closeStatus) > 123)
+                    {
+                        closeStatus = closeStatus.Substring(0, closeStatus.Length - 1);
+                    }
+                }
+                
                 _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith((t1) => {
                     _dbsess.RunAsync(() => {
-                        _sender.CloseAsync((error == "") ? 1000 : 4000, error, CancellationToken).ContinueWith((t2) =>
+                        _sender.CloseAsync((error == "") ? 1000 : 4000, closeStatus, CancellationToken).ContinueWith((t2) =>
                         {
                             Dispose();
                         });
