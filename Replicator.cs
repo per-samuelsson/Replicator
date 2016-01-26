@@ -29,13 +29,11 @@ namespace Replicator
 
     public sealed class Replicator : IDisposable
     {
-        private bool _isServer;
-        private bool _isConnected;
         private DbSession _dbsess;
         private IWebSocketSender _sender;
-        private Guid _selfGuid;
-        private Guid _peerGuid;
-        private LogApplicator _applicator = null;
+        private Guid _selfGuid = Program.GetDatabaseGuid();
+        private Guid _peerGuid = Guid.Empty;
+        private LogApplicator _applicator = new LogApplicator();
         private bool _isQuitting = false;
 
         private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
@@ -50,19 +48,13 @@ namespace Replicator
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
 
-        public Replicator(bool isServer, DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
+        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
         {
-            _isServer = isServer;
-            _isConnected = false;
             _dbsess = dbsess;
             _sender = sender;
             LogManager = manager;
             CancellationToken = ct;
-            _selfGuid = Program.GetDatabaseGuid();
-            PeerGuid = Guid.Empty;
-            DefaultPriority = 1; // default prio (0 = don't replicate, 1 = lowest prio)
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), CancellationToken).ContinueWith(HandleSendResult);
-            _applicator = new LogApplicator();
         }
 
         public ILogManager LogManager
@@ -75,34 +67,6 @@ namespace Replicator
         {
             get;
             private set;
-        }
-
-        public ulong DefaultPriority
-        {
-            get;
-            set;
-        }
-
-        public bool IsConnected
-        {
-            get
-            {
-                return _isConnected;
-            }
-            set
-            {
-                if (value != _isConnected)
-                {
-                    if (value)
-                    {
-                        _isConnected = true;
-                    }
-                    else
-                    {
-                        _isConnected = false;
-                    }
-                }
-            }
         }
 
         public string StripDatabasePrefix(string tableNameOrId)
@@ -194,7 +158,6 @@ namespace Replicator
             }
         }
 
-
         public bool IsDisposed
         {
             get;
@@ -204,31 +167,6 @@ namespace Replicator
         public bool IsPeerGuidSet
         {
             get { return PeerGuid != Guid.Empty; }
-        }
-
-        // Last LogPosition received from peer that was successfully committed.
-        // Must run on a SC thread
-        private LogPosition LastLogPosition
-        {
-            get
-            {
-                LogPosition pos = new LogPosition()
-                {
-                    commit_id = 0
-                };
-                if (IsPeerGuidSet)
-                {
-                    Db.Transact(() =>
-                    {
-                        Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.DatabaseGuid = ?", PeerGuidString).First;
-                        if (repl != null)
-                        {
-                            pos.commit_id = repl.CommitId;
-                        }
-                    });
-                }
-                return pos;
-            }
         }
 
         // Must run on a SC thread
@@ -330,132 +268,6 @@ namespace Replicator
             _sender.SendStringAsync(StringSerializer.Serialize(new StringBuilder(), t.Result).ToString(), CancellationToken).ContinueWith(HandleSendResult);
         }
 
-        /*
-        private bool FilterLoops(string table, column_update[] columns)
-        {
-            if (table == "Replicator.Replication")
-            {
-                for (int i = 0; i < columns.Length; i++)
-                {
-                    if (columns[i].name == "DatabaseGuid")
-                    {
-                        if ((string)columns[i].value == PeerGuidString)
-                            return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        // Must run on a SC thread
-        private bool FilterTransaction(LogReadResult lrr)
-        {
-            try
-            {
-                var tran = lrr.transaction_data;
-                int index;
-
-                lock (_prioMap)
-                {
-                    index = 0;
-                    while (index < tran.creates.Count)
-                    {
-                        var record = tran.creates[index];
-                        if (record.table.StartsWith("Replicator."))
-                        {
-                            if (FilterLoops(record.table, record.columns))
-                                return false;
-                            tran.creates.RemoveAt(index);
-                        }
-                        else
-                        {
-                            ulong p = DefaultPriority;
-                            if (_filter != null)
-                            {
-                                p = _filter.FilterCreate(PeerGuidString, record);
-                            }
-                            if (p == 0)
-                            {
-                                tran.creates.RemoveAt(index);
-                            }
-                            else
-                            {
-                                tran.creates[index] = record;
-                                index++;
-                            }
-                        }
-                    }
-
-                    index = 0;
-                    while (index < tran.updates.Count)
-                    {
-                        var record = tran.updates[index];
-                        if (record.table.StartsWith("Replicator."))
-                        {
-                            if (FilterLoops(record.table, record.columns))
-                                return false;
-                            tran.creates.RemoveAt(index);
-                        }
-                        else
-                        {
-                            ulong p = DefaultPriority;
-                            if (_filter != null)
-                            {
-                                p = _filter.FilterUpdate(PeerGuidString, record);
-                            }
-                            if (p == 0)
-                            {
-                                tran.creates.RemoveAt(index);
-                            }
-                            else
-                            {
-                                tran.updates[index] = record;
-                                index++;
-                            }
-                        }
-                    }
-
-                    index = 0;
-                    while (index < tran.deletes.Count)
-                    {
-                        var record = tran.deletes[index];
-                        if (record.table.StartsWith("Replicator."))
-                        {
-                            tran.deletes.RemoveAt(index);
-                        }
-                        else
-                        {
-                            ulong p = DefaultPriority;
-                            if (_filter != null)
-                            {
-                                p = _filter.FilterDelete(PeerGuidString, record);
-                            }
-                            if (p == 0)
-                            {
-                                tran.deletes.RemoveAt(index);
-                            }
-                            else
-                            {
-                                tran.deletes[index] = record;
-                                index++;
-                            }
-                        }
-                    }
-                }
-
-                if (tran.updates.Count > 0 || tran.creates.Count > 0 || tran.deletes.Count > 0)
-                    return true;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Replicator: {0}: FilterTransaction {1}: {2}", PeerGuidString, lrr.continuation_position, e);
-            }
-
-            // Transaction is empty or exception occured, don't send it
-            return false;
-        }
-        */
-
         // Must run on a SC thread
         private void UpdateCommitId(string table, ulong commitId)
         {
@@ -514,6 +326,7 @@ namespace Replicator
                 {
                     if (code == 4230 || code == 4177)
                     {
+                        // bisect transaction with current loaded classes to find which ones are missing
                         var tableset = new HashSet<string>();
                         ForAllTablesInTransaction(tran, (tableName) => tableset.Add(tableName));
                         Db.Transact(() =>
@@ -568,6 +381,7 @@ namespace Replicator
 
                 if (message.StartsWith("!QUIT"))
                 {
+                    _isQuitting = true;
                     QuitMessage = message.Substring(5).Trim();
                     _sender.CloseAsync(1000, null, CancellationToken).ContinueWith((_) =>
                     {
