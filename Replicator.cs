@@ -34,8 +34,9 @@ namespace Replicator
         private Guid _selfGuid = Db.Environment.DatabaseGuid;
         private Guid _peerGuid = Guid.Empty;
         private LogApplicator _applicator = new LogApplicator();
-        private bool _isQuitting = false;
         private ulong _transactionsProcessed = 0;
+        private bool _isQuitting = false;
+        private bool _isOk = false;
 
         private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
         private Dictionary<string, ulong> _peerTablePositions = null;
@@ -314,6 +315,11 @@ namespace Replicator
             return;
         }
 
+        public bool IsOk
+        {
+            get { return _isOk; }
+        }
+
         // Must run on a SC thread
         private void ProcessIncomingTransaction(LogReadResult tran)
         {
@@ -389,23 +395,28 @@ namespace Replicator
                         return;
                     }
                     ProcessIncomingTransaction(StringSerializer.DeserializeLogReadResult(new StringReader(message)));
+                    if (!_isOk && !_isQuitting)
+                    {
+                        _isOk = true;
+                        _sender.SendStringAsync("!OK", CancellationToken).ContinueWith(HandleSendResult);
+                    }
                     return;
                 }
 
 
                 // Command processing
 
+                if (message.StartsWith("!OK"))
+                {
+                    _isOk = true;
+                    return;
+                }
+
                 if (message.StartsWith("!QUIT"))
                 {
                     _isQuitting = true;
                     QuitMessage = message.Substring(5).Trim();
                     // Sender of !QUIT will close the connection
-                    /*
-                    _sender.CloseAsync(1000, null, CancellationToken).ContinueWith((_) =>
-                    {
-                        Dispose();
-                    });
-                    */
                     return;
                 }
 

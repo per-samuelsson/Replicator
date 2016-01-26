@@ -140,6 +140,10 @@ namespace Replicator
             string msg = null;
             if (_source != null)
             {
+                if (_source.IsOk)
+                {
+                    ReconnectInterval = _reconnectMinimum;
+                }
                 msg = _source.QuitMessage;
                 _source.Dispose();
                 _source = null;
@@ -237,10 +241,6 @@ namespace Replicator
             if (!IsConnected && _source.IsPeerGuidSet)
             {
                 IsConnected = true;
-            }
-            if (_source.TransactionsProcessed > 0)
-            {
-                ReconnectInterval = _reconnectMinimum;
             }
 
             WebSocketReceiveResult wsrr = t.Result;
