@@ -52,7 +52,7 @@ namespace Replicator
             {
                 if (_ws.State == WebSocketState.Open)
                 {
-                    return _ws.CloseAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
+                    return _ws.CloseOutputAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
                 }
             }
             return Task.FromResult(false);
@@ -184,8 +184,18 @@ namespace Replicator
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct);
+            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct, null);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
+        }
+
+        private void HandleDisconnected(Task t)
+        {
+            if (t.IsFaulted)
+            {
+                Reconnect(t.Exception);
+                return;
+            }
+            Reconnect(null);
         }
 
         public bool IsConnected
@@ -248,7 +258,8 @@ namespace Replicator
                     case WebSocketMessageType.Binary:
                         break;
                     case WebSocketMessageType.Close:
-                        break;
+                        _ws.CloseOutputAsync(wsrr.CloseStatus ?? WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).ContinueWith(HandleDisconnected);
+                        return;
                 }
                 _rdlen = 0;
             }

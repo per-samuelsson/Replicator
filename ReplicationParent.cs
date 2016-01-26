@@ -119,7 +119,7 @@ namespace Replicator
                 }
                 UInt64 wsId = req.GetWebSocketId();
                 WebSocket ws = req.SendUpgrade(Program.ReplicatorWebsocketProtocol, null, null, null);
-                _children[wsId] = new Replicator(_dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
+                _children[wsId] = new Replicator(_dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, null);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)
@@ -147,6 +147,8 @@ namespace Replicator
                 sink.Quit(error);
                 return;
             }
+            ws.Send("!QUIT UnknownSocket");
+            ws.Disconnect("Unknown socket");
         }
 
         public void SinkDisposed(ulong wsId)

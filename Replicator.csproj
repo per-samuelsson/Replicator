@@ -65,8 +65,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="IReplicationFilter.cs" />
+    <Compile Include="IOperationFilter.cs" />
     <Compile Include="HttpHandlers.cs" />
+    <Compile Include="ITableFilter.cs" />
     <Compile Include="Partials\Home.json.cs">
       <DependentUpon>Home.json</DependentUpon>
     </Compile>
@@ -81,7 +82,7 @@
       <DependentUpon>Status.json</DependentUpon>
     </Compile>
     <Compile Include="FilteredLogReader.cs" />
-    <Compile Include="ReplicationFilterSample.cs" />
+    <Compile Include="OperationFilterSample.cs" />
     <Compile Include="ReplicationTests.cs" />
     <Compile Include="Replicator.cs" />
     <Compile Include="Program.cs" />

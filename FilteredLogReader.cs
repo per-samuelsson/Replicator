@@ -36,7 +36,6 @@ namespace Replicator
             _replicator = replicator;
 
             // make a copy of the table position dictionary, stripping out prefix
-            // and separating out the wildcard database log position.
             if (tablePos != null)
             {
                 _tablePos = new Dictionary<string, ulong>(tablePos.Count);
@@ -46,9 +45,7 @@ namespace Replicator
                 }
             }
 
-            // local copy so we are immune to changes in it and 
-            // make sure we don't accidentally have tableId's
-            // instead of table names
+            // make a copy of the table filter set, stripping out prefix
             if (tableFilter != null)
             {
                 _tableFilter = new HashSet<string>();

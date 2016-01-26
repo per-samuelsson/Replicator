@@ -49,13 +49,22 @@ namespace Replicator
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
 
-        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct)
+        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct, ITableFilter filter)
         {
             _dbsess = dbsess;
             _sender = sender;
             LogManager = manager;
             CancellationToken = ct;
+            BuildFilters(filter?.Factory());
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), CancellationToken).ContinueWith(HandleSendResult);
+        }
+
+        private void BuildFilters(Dictionary<string, ulong> tablePrios)
+        {
+            if (tablePrios == null)
+            {
+                return;
+            }
         }
 
         public ILogManager LogManager
@@ -390,10 +399,13 @@ namespace Replicator
                 {
                     _isQuitting = true;
                     QuitMessage = message.Substring(5).Trim();
+                    // Sender of !QUIT will close the connection
+                    /*
                     _sender.CloseAsync(1000, null, CancellationToken).ContinueWith((_) =>
                     {
                         Dispose();
                     });
+                    */
                     return;
                 }
 
@@ -506,13 +518,17 @@ namespace Replicator
                 string closeStatus = (firstNewLine < 0) ? error : error.Substring(0, firstNewLine);
                 if (closeStatus.Length > 25)
                 {
-                    closeStatus = closeStatus.Substring(0, 123);
+                    if (closeStatus.Length > 122)
+                    {
+                        closeStatus = closeStatus.Substring(0, 123);
+                    }
                     while (Encoding.UTF8.GetByteCount(closeStatus) > 123)
                     {
                         closeStatus = closeStatus.Substring(0, closeStatus.Length - 1);
                     }
                 }
-                
+
+                // _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith(HandleSendResult);
                 _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith((t1) => {
                     _dbsess.RunAsync(() => {
                         _sender.CloseAsync((error == "") ? 1000 : 4000, closeStatus, CancellationToken).ContinueWith((t2) =>

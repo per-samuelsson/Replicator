@@ -6,25 +6,14 @@ using Starcounter.TransactionLog;
 
 namespace Replicator
 {
-    public class ReplicationFilterSample : IReplicationFilter
+    public class OperationFilterSample : IOperationFilter
     {
         private HashSet<string> _negativeCache = new HashSet<string>();
 
-        public ReplicationFilterSample() : this(1)
-        {
-        }
-
-        public ReplicationFilterSample(ulong allowPriority)
-        {
-            AllowPriority = allowPriority;
-        }
-
-        public ulong AllowPriority { get; set; }
-
-        public ulong FilterCreate(string destination, create_record_entry record)
+        public bool FilterCreate(string destination, create_record_entry record)
         {
             string baseUri = "/Replicator/out/" + record.table + "/";
-            ulong retv = 0; // block replication by default
+            bool retv = true; // block replication by default
             Response response;
             lock (_negativeCache)
             {
@@ -38,7 +27,7 @@ namespace Replicator
                     else if (response.StatusCode == 200)
                     {
                         // 200 will allow replication unless POST forbids it
-                        retv = AllowPriority;
+                        retv = false;
                         if (response.Body != null)
                         {
                             record = StringSerializer.DeserializeCreateRecordEntry(new StringReader(response.Body));
@@ -55,7 +44,7 @@ namespace Replicator
                     }
                     else if (response.StatusCode == 200)
                     {
-                        retv = AllowPriority;
+                        retv = false;
                         if (response.Body != null)
                         {
                             record = StringSerializer.DeserializeCreateRecordEntry(new StringReader(response.Body));
@@ -64,17 +53,17 @@ namespace Replicator
                     else
                     {
                         // allow POST to override the GET
-                        retv = 0;
+                        retv = true;
                     }
                 }
             }
             return retv;
         }
 
-        public ulong FilterUpdate(string destination, update_record_entry record)
+        public bool FilterUpdate(string destination, update_record_entry record)
         {
             string baseUri = "/Replicator/out/" + record.table + "/";
-            ulong retv = 0; // block replication by default
+            bool retv = true; // block replication by default
             Response response;
             lock (_negativeCache)
             {
@@ -88,7 +77,7 @@ namespace Replicator
                     else if (response.StatusCode == 200)
                     {
                         // 200 will allow replication unless POST forbids it
-                        retv = AllowPriority;
+                        retv = false;
                         if (response.Body != null)
                         {
                             record = StringSerializer.DeserializeUpdateRecordEntry(new StringReader(response.Body));
@@ -105,7 +94,7 @@ namespace Replicator
                     }
                     else if (response.StatusCode == 200)
                     {
-                        retv = AllowPriority;
+                        retv = false;
                         if (response.Body != null)
                         {
                             record = StringSerializer.DeserializeUpdateRecordEntry(new StringReader(response.Body));
@@ -114,17 +103,17 @@ namespace Replicator
                     else
                     {
                         // allow POST to override the GET
-                        retv = 0;
+                        retv = true;
                     }
                 }
             }
             return retv;
         }
 
-        public ulong FilterDelete(string destination, delete_record_entry record)
+        public bool FilterDelete(string destination, delete_record_entry record)
         {
             string baseUri = "/Replicator/out/" + record.table + "/";
-            ulong retv = 0; // block replication by default
+            bool retv = true; // block replication by default
             Response response;
             lock (_negativeCache)
             {
@@ -138,7 +127,7 @@ namespace Replicator
                     else if (response.StatusCode == 200)
                     {
                         // 200 will allow replication unless POST forbids it
-                        retv = AllowPriority;
+                        retv = false;
                         if (response.Body != null)
                         {
                             record = StringSerializer.DeserializeDeleteRecordEntry(new StringReader(response.Body));
@@ -155,7 +144,7 @@ namespace Replicator
                     }
                     else if (response.StatusCode == 200)
                     {
-                        retv = AllowPriority;
+                        retv = false;
                         if (response.Body != null)
                         {
                             record = StringSerializer.DeserializeDeleteRecordEntry(new StringReader(response.Body));
@@ -164,7 +153,7 @@ namespace Replicator
                     else
                     {
                         // allow POST to override the GET
-                        retv = 0;
+                        retv = true;
                     }
                 }
             }
