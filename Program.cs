@@ -69,29 +69,14 @@ namespace Replicator
         private static ParentStatus _parentStatus = new ParentStatus();
         private static bool _replicationEnabled = false;
 
-        static public Guid GetDatabaseGuid()
-        {
-            return Starcounter.Db.Environment.DatabaseGuid;
-            /*
-            // generate a fake database GUID
-            return new Guid(
-                System.Security.Cryptography.MD5.Create().ComputeHash(
-                    System.Text.Encoding.ASCII.GetBytes(
-                        System.Environment.MachineName + "/" + StarcounterEnvironment.DatabaseNameLower
-                        )
-                    )
-                );
-            */
-        }
-
         static private Configuration GetConfiguration()
         {
-            Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", GetDatabaseGuid().ToString()).First;
+            Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First;
             if (conf == null)
             {
                 conf = new Configuration()
                 {
-                    DatabaseGuid = GetDatabaseGuid().ToString(),
+                    DatabaseGuid = Db.Environment.DatabaseGuid.ToString(),
                     ParentUri = System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort,
                     ParentGuid = "",
                     ReconnectMinimumWaitSeconds = 1,

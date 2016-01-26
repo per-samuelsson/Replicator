@@ -31,7 +31,7 @@ namespace Replicator
     {
         private DbSession _dbsess;
         private IWebSocketSender _sender;
-        private Guid _selfGuid = Program.GetDatabaseGuid();
+        private Guid _selfGuid = Db.Environment.DatabaseGuid;
         private Guid _peerGuid = Guid.Empty;
         private LogApplicator _applicator = new LogApplicator();
         private bool _isQuitting = false;
