@@ -200,7 +200,6 @@ namespace Replicator
                 {
                     if (value)
                     {
-                        ReconnectInterval = _reconnectMinimum;
                         Program.ParentStatus.DatabaseGuid = _source.PeerGuidString;
                         _isConnected = true;
                     }
@@ -228,6 +227,10 @@ namespace Replicator
             if (!IsConnected && _source.IsPeerGuidSet)
             {
                 IsConnected = true;
+            }
+            if (_source.TransactionsProcessed > 0)
+            {
+                ReconnectInterval = _reconnectMinimum;
             }
 
             WebSocketReceiveResult wsrr = t.Result;

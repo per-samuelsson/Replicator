@@ -35,6 +35,7 @@ namespace Replicator
         private Guid _peerGuid = Guid.Empty;
         private LogApplicator _applicator = new LogApplicator();
         private bool _isQuitting = false;
+        private ulong _transactionsProcessed = 0;
 
         private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
         private Dictionary<string, ulong> _peerTablePositions = null;
@@ -67,6 +68,11 @@ namespace Replicator
         {
             get;
             private set;
+        }
+
+        public ulong TransactionsProcessed
+        {
+            get { return _transactionsProcessed; }
         }
 
         public string StripDatabasePrefix(string tableNameOrId)
@@ -317,6 +323,7 @@ namespace Replicator
                     }
                     _applicator.Apply(tran.transaction_data);
                 });
+                _transactionsProcessed++;
             }
             catch (Exception e)
             {
