@@ -7,6 +7,7 @@ using Starcounter;
 using Starcounter.TransactionLog;
 using System.IO;
 using System.Text;
+using System.Runtime.ExceptionServices;
 
 namespace Replicator
 {
@@ -40,31 +41,48 @@ namespace Replicator
 
         private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
         private Dictionary<string, ulong> _peerTablePositions = null;
-        private readonly HashSet<string> _tableFilter = null;
+        private HashSet<string>[] _tableFilters = null;
 
         // used to synchronize websocket input to the replicator
         private SemaphoreSlim _inputSem = new SemaphoreSlim(1);
         private ConcurrentQueue<string> _input = new ConcurrentQueue<string>();
 
-        private FilteredLogReader _reader = null;
+        private FilteredLogReader[] _readers = null;
+        private Task<LogReadResult>[] _readerTasks = null;
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
 
-        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct, ITableFilter filter)
+        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _dbsess = dbsess;
             _sender = sender;
             LogManager = manager;
             CancellationToken = ct;
-            BuildFilters(filter?.Factory());
+            if (tablePrios != null)
+                BuildFilters(tablePrios);
             _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), CancellationToken).ContinueWith(HandleSendResult);
         }
 
-        private void BuildFilters(Dictionary<string, ulong> tablePrios)
+        private void BuildFilters(Dictionary<string, int> tablePrios)
         {
-            if (tablePrios == null)
+            var sortedTableFilters = new SortedDictionary<int, HashSet<string>>();
+            foreach (var kv in tablePrios)
             {
-                return;
+                HashSet<string> tableSet;
+                if (!sortedTableFilters.TryGetValue(kv.Value, out tableSet))
+                {
+                    tableSet = new HashSet<string>();
+                    sortedTableFilters[kv.Value] = tableSet;
+                }
+                tableSet.Add(kv.Key);
+            }
+
+            int index = 0;
+            _tableFilters = new HashSet<string>[sortedTableFilters.Count];
+            foreach (var kv in sortedTableFilters)
+            {
+                _tableFilters[index] = kv.Value;
+                index++;
             }
         }
 
@@ -210,13 +228,66 @@ namespace Replicator
             return;
         }
 
+        private void InitializeReader(int index)
+        {
+            var reader = new FilteredLogReader(this, _peerTablePositions, _tableFilters == null ? null : _tableFilters[index]);
+            _readers[index] = reader;
+            _readerTasks[index] = reader.ReadAsync(CancellationToken);
+        }
+
         // Must run on a SC thread
         private void StartReplication()
         {
             if (!IsPeerGuidSet)
                 throw new InvalidOperationException("peer GUID not set");
-            _reader = new FilteredLogReader(this, _peerTablePositions, _tableFilter);
-            _reader.ReadAsync(CancellationToken).ContinueWith(HandleOutboundTransaction);
+
+            if (_tableFilters == null)
+            {
+                _readers = new FilteredLogReader[1];
+                _readerTasks = new Task<LogReadResult>[1];
+            }
+            else
+            {
+                _readers = new FilteredLogReader[_tableFilters.Length];
+                _readerTasks = new Task<LogReadResult>[_tableFilters.Length];
+            }
+
+            for (int i = _readers.Length - 1; i >= 0; i--)
+            {
+                InitializeReader(i);
+            }
+
+            ReadAsync(CancellationToken).ContinueWith(HandleOutboundTransaction);
+        }
+
+        // Must run on a SC thread
+        private async Task<LogReadResult> ReadAsync(CancellationToken ct)
+        {
+            if (ct.IsCancellationRequested)
+                return null;
+
+            await Task.WhenAny<LogReadResult>(_readerTasks);
+
+            // we process array in reverse order to get higher prio stuff done first
+            for (int i = _readerTasks.Length - 1; i >= 0; i--)
+            {
+                var t = _readerTasks[i];
+                if (t.IsCompleted)
+                {
+                    _readerTasks[i] = _readers[i].ReadAsync(ct);
+                    if (t.IsFaulted)
+                    {
+                        ExceptionDispatchInfo.Capture(t.Exception.InnerException).Throw();
+                    }
+                    if (t.IsCanceled)
+                    {
+                        continue;
+                    }
+                    return t.Result;
+                }
+            }
+
+            return null;
         }
 
         // Called from non-SC thread (LogReader)
@@ -258,7 +329,7 @@ namespace Replicator
                 finally
                 {
                     if (!CancellationToken.IsCancellationRequested)
-                        _reader.ReadAsync(CancellationToken).ContinueWith(HandleOutboundTransaction);
+                        ReadAsync(CancellationToken).ContinueWith(HandleOutboundTransaction);
                     _logQueueSem.Release();
                 }
             }
@@ -328,7 +399,7 @@ namespace Replicator
                 Db.Transact(() =>
                 {
                     ulong commitId = tran.continuation_position.commit_id;
-                    if (_tableFilter == null)
+                    if (_tableFilters == null)
                     {
                         UpdateCommitId("", commitId);
                     }
@@ -372,7 +443,7 @@ namespace Replicator
                         }
                     }
                 }
-                throw e;
+                throw;
             }
         }
 

@@ -76,11 +76,12 @@ namespace Replicator
 
     public class ReplicationParent
     {
+        private readonly ILogManager _logmanager;
+        private readonly CancellationToken _ct;
+        private readonly Dictionary<string, int> _tablePrios;
+        private readonly string _logdirectory = TransactionLogDirectory;
         private DbSession _dbsess;
         private ConcurrentDictionary<UInt64, Replicator> _children = new ConcurrentDictionary<UInt64, Replicator>();
-        private string _logdirectory = TransactionLogDirectory;
-        private ILogManager _logmanager;
-        private CancellationToken _ct;
 
         static public string TransactionLogDirectory
         {
@@ -95,10 +96,11 @@ namespace Replicator
             }
         }
 
-        public ReplicationParent(ILogManager manager, CancellationToken ct)
+        public ReplicationParent(ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _logmanager = manager;
             _ct = ct;
+            _tablePrios = tablePrios;
             _dbsess = new DbSession();
             Handle.GET(Program.ReplicatorServicePath, (Request req) => HandleConnect(req));
             Handle.WebSocketDisconnect(Program.ReplicatorWebsocketProtocol, HandleDisconnect);
@@ -119,7 +121,7 @@ namespace Replicator
                 }
                 UInt64 wsId = req.GetWebSocketId();
                 WebSocket ws = req.SendUpgrade(Program.ReplicatorWebsocketProtocol, null, null, null);
-                _children[wsId] = new Replicator(_dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, null);
+                _children[wsId] = new Replicator(_dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, _tablePrios);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)

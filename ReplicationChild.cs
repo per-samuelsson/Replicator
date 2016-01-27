@@ -81,10 +81,11 @@ namespace Replicator
 
     class ReplicationChild
     {
-        private ILogManager _manager;
+        private readonly ILogManager _manager;
+        private readonly Uri _sourceUri;
+        private readonly CancellationToken _ct;
+        private readonly Dictionary<string, int> _tablePrios;
         private ClientWebSocket _ws = null;
-        private Uri _sourceUri;
-        private CancellationToken _ct;
         private int _reconnectInterval = Program.ReconnectMinimumWaitSeconds;
         private Replicator _source = null;
         private byte[] _rdbuf = new byte[1024];
@@ -94,7 +95,7 @@ namespace Replicator
         private int _reconnectMaximum;
         private bool _isConnected = false;
 
-        public ReplicationChild(ILogManager manager, string parentUri, CancellationToken ct)
+        public ReplicationChild(ILogManager manager, string parentUri, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _manager = manager;
             if (parentUri == "")
@@ -105,6 +106,7 @@ namespace Replicator
                 parentUri = parentUri + Program.ReplicatorServicePath;
             _sourceUri = new Uri(parentUri);
             _ct = ct;
+            _tablePrios = tablePrios;
             _dbsess = new Starcounter.DbSession();
             _reconnectMinimum = Program.ReconnectMinimumWaitSeconds;
             _reconnectMaximum = Program.ReconnectMaximumWaitSeconds;
@@ -131,6 +133,7 @@ namespace Replicator
                 return;
             Program.Status = "Connecting to " + _sourceUri.ToString();
             _ws = new ClientWebSocket();
+            _ws.Options.KeepAliveInterval = TimeSpan.FromDays(1);
             _ws.ConnectAsync(_sourceUri, _ct).ContinueWith(HandleConnected);
         }
 
@@ -188,7 +191,7 @@ namespace Replicator
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct, null);
+            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 

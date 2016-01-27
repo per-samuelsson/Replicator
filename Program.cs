@@ -223,7 +223,7 @@ namespace Replicator
         {
             Disconnect();
             _replicationEnabled = true;
-            _client = new ReplicationChild(_clientmanager, ParentUri, _cts.Token);
+            _client = new ReplicationChild(_clientmanager, ParentUri, _cts.Token, TablePriorities);
         }
 
         static public void Disconnect()
@@ -238,6 +238,21 @@ namespace Replicator
             Status = "Not connected.";
         }
 
+        static private Dictionary<string, int> TablePriorities
+        {
+            get
+            {
+                /*
+                var d = new Dictionary<string, int>();
+                d["Invoice"] = 1;
+                d["InvoiceRow"] = 0;
+                return d;
+                */
+                return null;
+            }
+        }
+
+
         static void Main(string[] args)
         {
             Console.WriteLine("Starting replicator in {0}. Configured key range: {1}", 
@@ -249,7 +264,7 @@ namespace Replicator
             Status = "Not connected.";
             new HttpHandlers();
             // new ReplicationTests.ReplicationTests();
-            _server = new ReplicationParent(_servermanager, _cts.Token);
+            _server = new ReplicationParent(_servermanager, _cts.Token, TablePriorities);
 
             foreach (var arg in args)
             {

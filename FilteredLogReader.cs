@@ -98,11 +98,13 @@ namespace Replicator
                     }
                 }
             }
-            // if there is no filter, use database commit id
-            if (_tableFilter == null)
+
+            // if there is no filter or no table positions, use database commit id
+            if (_tableFilter == null || _tablePos == null)
             {
                 return databaseCommitId;
             }
+
             // if one of the tables in the filter is not known, use database commit id
             foreach (var tableName in _tableFilter)
             {
@@ -111,9 +113,11 @@ namespace Replicator
                     return databaseCommitId;
                 }
             }
-            // if the darabase commit id has progressed further than lowest table, use that
+
+            // if the database commit id has progressed further than lowest table, use that
             if (minTableCommitId < databaseCommitId)
                 return databaseCommitId;
+
             // we have a filter and all tables named in it are known
             return minTableCommitId;
         }
@@ -142,8 +146,9 @@ namespace Replicator
                 ulong minId;
                 if (_tablePos.TryGetValue(tableName, out minId))
                 {
-                    if (commitId < minId)
+                    if (commitId <= minId)
                     {
+                        // receiver has already seen that transaction for this table
                         return true;
                     }
                     _tablePos.Remove(tableName);
