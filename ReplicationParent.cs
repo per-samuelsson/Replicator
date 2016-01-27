@@ -154,13 +154,7 @@ namespace Replicator
         public void SinkDisposed(ulong wsId)
         {
             Replicator sink;
-            if (!_children.TryRemove(wsId, out sink))
-            {
-                Console.WriteLine("sink wsID={0} not found", wsId);
-                return;
-                // throw new Exception("sink not found");
-            }
-            Console.WriteLine("sink wsID={0} disposed", wsId);
+            _children.TryRemove(wsId, out sink);
         }
 
         private void HandleStringMessage(string data, WebSocket ws)
