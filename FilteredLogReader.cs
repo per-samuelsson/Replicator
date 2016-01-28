@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Starcounter;
 using Starcounter.TransactionLog;
 
-
 namespace Replicator
 {
     /// <summary>
@@ -237,7 +236,13 @@ namespace Replicator
                 index++;
             }
 
-            return tran.updates.Count == 0 && tran.creates.Count == 0 && tran.deletes.Count == 0;
+            if (tran.updates.Count == 0 && tran.creates.Count == 0 && tran.deletes.Count == 0)
+            {
+                // transaction is empty
+                return true;
+            }
+
+            return false;
         }
 
         public async Task<LogReadResult> ReadAsync(CancellationToken ct)

@@ -41,6 +41,7 @@ namespace Replicator
 
         private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
         private Dictionary<string, ulong> _peerTablePositions = null;
+        private List<HashSet<string>> _peerTableFilters = null;
         private HashSet<string>[] _tableFilters = null;
 
         // used to synchronize websocket input to the replicator
@@ -52,6 +53,11 @@ namespace Replicator
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
 
+        static public bool IsTransactionEmpty(TransactionData tran)
+        {
+            return tran.updates.Count == 0 && tran.creates.Count == 0 && tran.deletes.Count == 0;
+        }
+
         public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _dbsess = dbsess;
@@ -59,12 +65,22 @@ namespace Replicator
             LogManager = manager;
             CancellationToken = ct;
             if (tablePrios != null)
+            {
                 BuildFilters(tablePrios);
-            _sender.SendStringAsync("!GUID " + _selfGuid.ToString(), CancellationToken).ContinueWith(HandleSendResult);
+            }
+            var sb = new StringBuilder();
+            sb.Append("!ID ");
+            StringSerializer.Serialize(sb, Db.Environment.DatabaseName);
+            StringSerializer.Serialize(sb, _selfGuid.ToString());
+            _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
         }
 
         private void BuildFilters(Dictionary<string, int> tablePrios)
         {
+            if (tablePrios.Count == 0)
+            {
+                throw new ArgumentException("tablePrios is empty (and not null)");
+            }
             var sortedTableFilters = new SortedDictionary<int, HashSet<string>>();
             foreach (var kv in tablePrios)
             {
@@ -101,6 +117,11 @@ namespace Replicator
         public ulong TransactionsProcessed
         {
             get { return _transactionsProcessed; }
+        }
+
+        public bool PeerHasFilters
+        {
+            get { return _peerTableFilters != null; }
         }
 
         public string StripDatabasePrefix(string tableNameOrId)
@@ -149,6 +170,12 @@ namespace Replicator
         public ConcurrentQueue<string> Input
         {
             get { return _input; }
+        }
+
+        public string PeerDatabaseName
+        {
+            get;
+            private set;
         }
 
         public Guid PeerGuid
@@ -209,7 +236,7 @@ namespace Replicator
             if (t.IsFaulted)
             {
                 Console.WriteLine("Replicator: {0}: Exception: {1}", PeerGuidString, t.Exception.ToString());
-                Quit(t.Exception.Message);
+                Quit(t.Exception);
                 return;
             }
             if (t.IsCanceled)
@@ -347,7 +374,7 @@ namespace Replicator
             if (t.IsFaulted)
             {
                 Console.WriteLine("Replicator: {0}: {1}", PeerGuidString, t.Exception.ToString());
-                Quit(t.Exception.Message);
+                Quit(t.Exception);
                 return;
             }
 
@@ -391,22 +418,22 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        private void ProcessIncomingTransaction(LogReadResult tran)
+        private void ProcessIncomingTransaction(LogReadResult lrr)
         {
             try
             {
                 Db.Transact(() =>
                 {
-                    ulong commitId = tran.continuation_position.commit_id;
-                    if (_tableFilters == null)
+                    ulong commitId = lrr.continuation_position.commit_id;
+                    if (PeerHasFilters)
                     {
-                        UpdateCommitId("", commitId);
+                        ForAllTablesInTransaction(lrr, (tableName) => UpdateCommitId(tableName, commitId));
                     }
                     else
                     {
-                        ForAllTablesInTransaction(tran, (tableName) => UpdateCommitId(tableName, commitId));
+                        UpdateCommitId(string.Empty, commitId);
                     }
-                    _applicator.Apply(tran.transaction_data);
+                    _applicator.Apply(lrr.transaction_data);
                 });
                 _transactionsProcessed++;
             }
@@ -420,7 +447,7 @@ namespace Replicator
                     {
                         // bisect transaction with current loaded classes to find which ones are missing
                         var tableset = new HashSet<string>();
-                        ForAllTablesInTransaction(tran, (tableName) => tableset.Add(tableName));
+                        ForAllTablesInTransaction(lrr, (tableName) => tableset.Add(tableName));
                         Db.Transact(() =>
                         {
                             foreach (Starcounter.Metadata.ClrClass cc in Db.SQL<Starcounter.Metadata.ClrClass>("SELECT cc FROM Starcounter.Metadata.ClrClass cc"))
@@ -490,9 +517,12 @@ namespace Replicator
                     return;
                 }
 
-                if (message.StartsWith("!GUID "))
+                if (message.StartsWith("!ID "))
                 {
-                    var peerGuid = Guid.Parse(message.Substring(6));
+                    var sr = new StringReader(message);
+                    for (int i = 0; i < 4; i++) sr.Read();
+                    var peerDatabaseName = StringSerializer.DeserializeString(sr);
+                    var peerGuid = Guid.Parse(StringSerializer.DeserializeString(sr));
                     if (peerGuid == Guid.Empty)
                     {
                         Quit("GUID is empty");
@@ -503,9 +533,31 @@ namespace Replicator
                         Quit("GUID is my own");
                         return;
                     }
+                    PeerDatabaseName = peerDatabaseName;
                     PeerGuid = peerGuid;
+                    SendFilterState();
                     BuildReplicationState();
                     SendReplicationState();
+                    return;
+                }
+
+                if (message.StartsWith("!FILTER "))
+                {
+                    var sr = new StringReader(message);
+                    for (int i = 0; i < 8; i++) sr.Read();
+                    var tableSet = new HashSet<string>();
+                    while (StringSerializer.SkipWS(sr) != -1)
+                    {
+                        tableSet.Add(StringSerializer.DeserializeString(sr));
+                    }
+                    if (tableSet.Count > 0)
+                    {
+                        if (_peerTableFilters == null)
+                        {
+                            _peerTableFilters = new List<HashSet<string>>();
+                        }
+                        _peerTableFilters.Add(tableSet);
+                    }
                     return;
                 }
 
@@ -531,7 +583,7 @@ namespace Replicator
             catch (Exception e)
             {
                 Console.WriteLine("Replicator: \"{0}\": {1}", message, e);
-                Quit(e.ToString());
+                Quit(e);
                 return;
             }
 
@@ -577,6 +629,23 @@ namespace Replicator
                 _dbsess.RunAsync(() => { SendReplicationState(); });
         }
 
+        private void SendFilterState()
+        {
+            if (_tableFilters != null)
+            {
+                for (int i = 0; i < _tableFilters.Length; i++)
+                {
+                    var sb = new StringBuilder();
+                    sb.Append("!FILTER ");
+                    foreach (var tableName in _tableFilters[i])
+                    {
+                        StringSerializer.Serialize(sb, tableName);
+                    }
+                    _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
+                }
+            }
+        }
+
         // Must run on a SC thread
         private void SendReplicationState()
         {
@@ -600,6 +669,13 @@ namespace Replicator
                 }
             }
             _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendReplicationStateResult);
+            return;
+        }
+
+        // Must run on a SC thread
+        public void Quit(Exception e)
+        {
+            Quit(e.ToString());
             return;
         }
 

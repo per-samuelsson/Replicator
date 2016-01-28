@@ -243,10 +243,14 @@ namespace Replicator
             get
             {
                 /*
+                // For testing, generate random filters
+                var r = new Random();
                 var d = new Dictionary<string, int>();
-                d["Invoice"] = 1;
-                d["InvoiceRow"] = 0;
-                return d;
+                if (r.Next(100) < 50)
+                    d["Invoice"] = r.Next(2);
+                if (r.Next(100) < 50)
+                    d["InvoiceRow"] = r.Next(2);
+                return d.Count > 0 ? d : null;
                 */
                 return null;
             }
