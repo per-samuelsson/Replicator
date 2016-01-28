@@ -27,7 +27,7 @@ namespace Replicator
     class FilteredLogReader
     {
         private readonly Replicator _replicator;
-        private Dictionary<string, ulong> _tablePos;
+        private Dictionary<string, ulong> _tablePos = null;
         private readonly HashSet<string> _tableFilter;
         private readonly ILogReader _reader;
 
@@ -36,7 +36,7 @@ namespace Replicator
             _replicator = replicator;
 
             // make a copy of the table position dictionary, stripping out prefix
-            if (tablePos != null)
+            if (tablePos != null && tablePos.Count > 0)
             {
                 _tablePos = new Dictionary<string, ulong>(tablePos.Count);
                 foreach (var kv in tablePos)
@@ -51,7 +51,11 @@ namespace Replicator
                 _tableFilter = new HashSet<string>();
                 foreach (var tableNameOrId in tableFilter)
                 {
-                    _tableFilter.Add(StripDatabasePrefix(tableNameOrId));
+                    var tableName = StripDatabasePrefix(tableNameOrId);
+                    if (tableName != string.Empty)
+                    {
+                        _tableFilter.Add(tableName);
+                    }
                 }
             }
 
@@ -83,7 +87,7 @@ namespace Replicator
         {
             ulong databaseCommitId = 0;
             ulong minTableCommitId = 0;
-            if (_tablePos != null && _tablePos.Count > 0)
+            if (_tablePos != null)
             {
                 minTableCommitId = ulong.MaxValue;
                 foreach (KeyValuePair<string, ulong> kv in _tablePos)
@@ -97,8 +101,15 @@ namespace Replicator
                         minTableCommitId = kv.Value;
                     }
                 }
+                if (_tablePos.Remove(string.Empty))
+                {
+                    if (_tablePos.Count == 0)
+                    {
+                        _tablePos = null;
+                    }
+                }
             }
-
+ 
             // if there is no filter or no table positions, use database commit id
             if (_tableFilter == null || _tablePos == null)
             {

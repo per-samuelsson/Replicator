@@ -260,31 +260,30 @@ namespace Replicator
             ReadAsync(CancellationToken).ContinueWith(HandleOutboundTransaction);
         }
 
-        // Must run on a SC thread
         private async Task<LogReadResult> ReadAsync(CancellationToken ct)
         {
-            if (ct.IsCancellationRequested)
-                return null;
-
-            await Task.WhenAny<LogReadResult>(_readerTasks);
-
-            // we process array in reverse order to get higher prio stuff done first
-            for (int i = _readerTasks.Length - 1; i >= 0; i--)
+            while (!ct.IsCancellationRequested)
             {
-                var t = _readerTasks[i];
-                if (t.IsCompleted)
+                // we process array in reverse order to get higher prio stuff done first
+                for (int i = _readerTasks.Length - 1; i >= 0; i--)
                 {
-                    _readerTasks[i] = _readers[i].ReadAsync(ct);
-                    if (t.IsFaulted)
+                    var t = _readerTasks[i];
+                    if (t.IsCompleted)
                     {
-                        ExceptionDispatchInfo.Capture(t.Exception.InnerException).Throw();
+                        _readerTasks[i] = _readers[i].ReadAsync(ct);
+                        if (t.IsFaulted)
+                        {
+                            ExceptionDispatchInfo.Capture(t.Exception.InnerException).Throw();
+                        }
+                        if (t.IsCanceled)
+                        {
+                            continue;
+                        }
+                        return t.Result;
                     }
-                    if (t.IsCanceled)
-                    {
-                        continue;
-                    }
-                    return t.Result;
                 }
+
+                await Task.WhenAny(_readerTasks);
             }
 
             return null;
@@ -546,9 +545,24 @@ namespace Replicator
             _replicationStateQueue = new ConcurrentQueue<KeyValuePair<string, ulong>>();
             Db.Transact(() =>
             {
+                ulong databaseCommitId = 0;
+                Replication dbRepl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId = ?", PeerTableIdPrefix).First;
+                if (dbRepl != null)
+                {
+                    databaseCommitId = dbRepl.CommitId;
+                }
+
                 foreach (Replication repl in Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId LIKE ?", PeerTableIdPrefix + '%'))
                 {
-                    _replicationStateQueue.Enqueue(new KeyValuePair<string, ulong>(repl.TableId, repl.CommitId));
+                    // remove table entries that are obsolete
+                    if (repl.TableId != PeerTableIdPrefix && repl.CommitId <= databaseCommitId)
+                    {
+                        repl.Delete();
+                    }
+                    else
+                    {
+                        _replicationStateQueue.Enqueue(new KeyValuePair<string, ulong>(repl.TableId, repl.CommitId));
+                    }
                 }
             });
             return;
