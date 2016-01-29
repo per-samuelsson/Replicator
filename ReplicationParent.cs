@@ -110,13 +110,25 @@ namespace Replicator
 
         private Response HandleConnect(Request req)
         {
+            /*
+            if (_ct.IsCancellationRequested)
+            {
+                return new Response()
+                {
+                    StatusCode = 503,
+                    StatusDescription = "Service Unavailable"
+                };
+            }
+            */
+
             try
             {
                 if (!req.WebSocketUpgrade)
                 {
                     return new Response()
                     {
-                        StatusCode = 400
+                        StatusCode = 400,
+                        StatusDescription = "Bad Request"
                     };
                 }
                 UInt64 wsId = req.GetWebSocketId();
@@ -129,6 +141,7 @@ namespace Replicator
                 return new Response()
                 {
                     StatusCode = 500,
+                    StatusDescription = "Internal Server Error",
                     Body = exc.ToString()
                 };
             }

@@ -11,14 +11,6 @@ using System.Runtime.ExceptionServices;
 
 namespace Replicator
 {
-    public interface IWebSocketSender : IDisposable
-    {
-        // All of these must be called from a SC thread
-        Task SendStringAsync(string message, CancellationToken cancellationToken);
-        Task SendBinaryAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken);
-        Task CloseAsync(int closeStatus, string statusMessage, CancellationToken cancellationToken);
-    }
-
     [Database]
     public class Replication
     {
@@ -28,21 +20,20 @@ namespace Replicator
         public ulong CommitId;
     }
 
-    public sealed class Replicator : IDisposable
+    public sealed class Replicator : IDisposable, IReplicatorState
     {
         private DbSession _dbsess;
         private IWebSocketSender _sender;
-        private Guid _selfGuid = Db.Environment.DatabaseGuid;
-        private Guid _peerGuid = Guid.Empty;
         private LogApplicator _applicator = new LogApplicator();
-        private ulong _transactionsProcessed = 0;
-        private bool _isQuitting = false;
-        private bool _isOk = false;
 
-        private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
+        // private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
         private Dictionary<string, ulong> _peerTablePositions = null;
         private List<HashSet<string>> _peerTableFilters = null;
         private HashSet<string>[] _tableFilters = null;
+
+        // used to synchronize websocket output for the replicator
+        private SemaphoreSlim _outputSem = new SemaphoreSlim(1);
+        private ConcurrentQueue<string> _output = new ConcurrentQueue<string>();
 
         // used to synchronize websocket input to the replicator
         private SemaphoreSlim _inputSem = new SemaphoreSlim(1);
@@ -53,10 +44,62 @@ namespace Replicator
         private ConcurrentQueue<Task<LogReadResult>> _logQueue = new ConcurrentQueue<Task<LogReadResult>>();
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
 
+        private Guid _peerGuid = Guid.Empty;
+
         static public bool IsTransactionEmpty(TransactionData tran)
         {
             return tran.updates.Count == 0 && tran.creates.Count == 0 && tran.deletes.Count == 0;
         }
+
+        private Guid SelfGuid
+        {
+            get
+            {
+                return Db.Environment.DatabaseGuid;
+            }
+        }
+
+        public bool IsQuitting
+        {
+            get;
+            private set;
+        }
+
+        public RunState RunState
+        {
+            get;
+            private set;
+        }
+
+        public ulong TransactionsReceived
+        {
+            get;
+            private set;
+        }
+
+        public ulong TransactionsSent
+        {
+            get;
+            private set;
+        }
+
+        public ILogManager LogManager
+        {
+            get;
+            private set;
+        }
+
+        public CancellationToken CancellationToken
+        {
+            get;
+            private set;
+        }
+
+        public bool PeerHasFilters
+        {
+            get { return _peerTableFilters != null; }
+        }
+
 
         public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
@@ -68,11 +111,28 @@ namespace Replicator
             {
                 BuildFilters(tablePrios);
             }
+            RunState = RunState.Starting;
             var sb = new StringBuilder();
             sb.Append("!ID ");
             StringSerializer.Serialize(sb, Db.Environment.DatabaseName);
-            StringSerializer.Serialize(sb, _selfGuid.ToString());
-            _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
+            StringSerializer.Serialize(sb, SelfGuid.ToString());
+            Send(sb);
+            // _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
+        }
+
+        private void Send(StringBuilder sb)
+        {
+            if (sb.Length > 0)
+            {
+                Send(sb.ToString());
+                sb.Clear();
+            }
+        }
+
+        private void Send(string s)
+        {
+            _output.Enqueue(s);
+            ProcessOutput();
         }
 
         private void BuildFilters(Dictionary<string, int> tablePrios)
@@ -102,28 +162,6 @@ namespace Replicator
             }
         }
 
-        public ILogManager LogManager
-        {
-            get;
-            private set;
-        }
-
-        public CancellationToken CancellationToken
-        {
-            get;
-            private set;
-        }
-
-        public ulong TransactionsProcessed
-        {
-            get { return _transactionsProcessed; }
-        }
-
-        public bool PeerHasFilters
-        {
-            get { return _peerTableFilters != null; }
-        }
-
         public string StripDatabasePrefix(string tableNameOrId)
         {
             if (tableNameOrId.IndexOf(':') == -1)
@@ -135,6 +173,58 @@ namespace Replicator
                 return tableNameOrId.Substring(PeerTableIdPrefix.Length);
             }
             throw new ArgumentException("tableNameOrId had wrong database id prefix");
+        }
+
+
+        // Must run in a SC thread
+        public void ProcessOutput()
+        {
+            if (_outputSem.Wait(0))
+            {
+                try
+                {
+                    string message;
+                    if (_output.TryDequeue(out message))
+                    {
+                        _sender.SendStringAsync(message, CancellationToken.None).ContinueWith(HandleSendResult);
+                        return;
+                    }
+                    if (IsQuitting)
+                    {
+                        _sender.CloseAsync(1000, string.Empty, CancellationToken.None).ContinueWith(HandleCloseResult);
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+                    _outputSem.Release();
+                    throw;
+                }
+                _outputSem.Release();
+            }
+        }
+
+        // Can be called from non-SC thread
+        private void HandleCloseResult(Task t)
+        {
+            _outputSem.Release();
+            Dispose();
+            return;
+        }
+
+        // Can be called from non-SC thread
+        private void HandleSendResult(Task t)
+        {
+            _outputSem.Release();
+            if (t.IsFaulted || t.IsCanceled)
+            {
+                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
+            }
+            else
+            {
+                _dbsess.RunAsync(ProcessOutput);
+            }
+            return;
         }
 
         // Must run in a SC thread
@@ -185,7 +275,7 @@ namespace Replicator
                 return _peerGuid;
             }
 
-            set
+            private set
             {
                 _peerGuid = value;
                 PeerGuidString = _peerGuid.ToString();
@@ -235,24 +325,15 @@ namespace Replicator
         {
             if (t.IsFaulted)
             {
-                Console.WriteLine("Replicator: {0}: Exception: {1}", PeerGuidString, t.Exception.ToString());
                 Quit(t.Exception);
                 return;
             }
+
             if (t.IsCanceled)
             {
-                Console.WriteLine("Replicator: {0}: Cancelled", PeerGuidString);
-                Quit("Cancelled");
+                Canceled();
                 return;
             }
-        }
-
-        // Can be called from non-SC thread
-        private void HandleSendResult(Task t)
-        {
-            if (t.IsFaulted || t.IsCanceled)
-                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
-            return;
         }
 
         private void InitializeReader(int index)
@@ -265,6 +346,9 @@ namespace Replicator
         // Must run on a SC thread
         private void StartReplication()
         {
+            if (CancellationToken.IsCancellationRequested)
+                return;
+
             if (!IsPeerGuidSet)
                 throw new InvalidOperationException("peer GUID not set");
 
@@ -284,12 +368,12 @@ namespace Replicator
                 InitializeReader(i);
             }
 
-            ReadAsync(CancellationToken).ContinueWith(HandleOutboundTransaction);
+            ReadAsync().ContinueWith(HandleOutboundTransaction);
         }
 
-        private async Task<LogReadResult> ReadAsync(CancellationToken ct)
+        private async Task<LogReadResult> ReadAsync()
         {
-            while (!ct.IsCancellationRequested)
+            while (!CancellationToken.IsCancellationRequested)
             {
                 // we process array in reverse order to get higher prio stuff done first
                 for (int i = _readerTasks.Length - 1; i >= 0; i--)
@@ -297,14 +381,14 @@ namespace Replicator
                     var t = _readerTasks[i];
                     if (t.IsCompleted)
                     {
-                        _readerTasks[i] = _readers[i].ReadAsync(ct);
+                        _readerTasks[i] = _readers[i].ReadAsync(CancellationToken);
                         if (t.IsFaulted)
                         {
                             ExceptionDispatchInfo.Capture(t.Exception.InnerException).Throw();
                         }
                         if (t.IsCanceled)
                         {
-                            continue;
+                            Canceled();
                         }
                         return t.Result;
                     }
@@ -313,6 +397,7 @@ namespace Replicator
                 await Task.WhenAny(_readerTasks);
             }
 
+            Canceled();
             return null;
         }
 
@@ -347,15 +432,11 @@ namespace Replicator
                     Task<LogReadResult> t;
                     while (_logQueue.TryDequeue(out t))
                         ProcessOutboundTransaction(t);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine("Replicator: {0}: ProcessLogQueue: {1}", PeerGuidString, e);
+                    if (!CancellationToken.IsCancellationRequested)
+                        ReadAsync().ContinueWith(HandleOutboundTransaction);
                 }
                 finally
                 {
-                    if (!CancellationToken.IsCancellationRequested)
-                        ReadAsync(CancellationToken).ContinueWith(HandleOutboundTransaction);
                     _logQueueSem.Release();
                 }
             }
@@ -364,21 +445,20 @@ namespace Replicator
         // Must run on a SC thread
         private void ProcessOutboundTransaction(Task<LogReadResult> t)
         {
-            if (t.IsCanceled)
-            {
-                Console.WriteLine("Replicator: {0}: Cancelled", PeerGuidString);
-                Quit("Cancelled");
-                return;
-            }
-
             if (t.IsFaulted)
             {
-                Console.WriteLine("Replicator: {0}: {1}", PeerGuidString, t.Exception.ToString());
                 Quit(t.Exception);
                 return;
             }
 
-            _sender.SendStringAsync(StringSerializer.Serialize(new StringBuilder(), t.Result).ToString(), CancellationToken).ContinueWith(HandleSendResult);
+            if (t.IsCanceled || CancellationToken.IsCancellationRequested)
+            {
+                Canceled();
+                return;
+            }
+
+            Send(StringSerializer.Serialize(new StringBuilder(), t.Result).ToString());
+            // _sender.SendStringAsync(StringSerializer.Serialize(new StringBuilder(), t.Result).ToString(), CancellationToken).ContinueWith(HandleSendResult);
         }
 
         // Must run on a SC thread
@@ -412,11 +492,6 @@ namespace Replicator
             return;
         }
 
-        public bool IsOk
-        {
-            get { return _isOk; }
-        }
-
         // Must run on a SC thread
         private void ProcessIncomingTransaction(LogReadResult lrr)
         {
@@ -435,7 +510,7 @@ namespace Replicator
                     }
                     _applicator.Apply(lrr.transaction_data);
                 });
-                _transactionsProcessed++;
+                TransactionsReceived++;
             }
             catch (Exception e)
             {
@@ -476,7 +551,7 @@ namespace Replicator
         // Must run on a SC thread
         private void ProcessStringMessage(string message)
         {
-            if (_isQuitting)
+            if (IsQuitting)
             {
                 return;
             }
@@ -492,10 +567,10 @@ namespace Replicator
                         return;
                     }
                     ProcessIncomingTransaction(StringSerializer.DeserializeLogReadResult(new StringReader(message)));
-                    if (!_isOk && !_isQuitting)
+                    if (TransactionsReceived == 1 && !IsQuitting)
                     {
-                        _isOk = true;
-                        _sender.SendStringAsync("!OK", CancellationToken).ContinueWith(HandleSendResult);
+                        Send("!OK");
+                        // _sender.SendStringAsync("!OK", CancellationToken).ContinueWith(HandleSendResult);
                     }
                     return;
                 }
@@ -503,15 +578,15 @@ namespace Replicator
 
                 // Command processing
 
-                if (message.StartsWith("!OK"))
+                if (message.StartsWith("!OK") && RunState == RunState.Starting)
                 {
-                    _isOk = true;
+                    RunState = RunState.Running;
                     return;
                 }
 
                 if (message.StartsWith("!QUIT"))
                 {
-                    _isQuitting = true;
+                    IsQuitting = true;
                     QuitMessage = message.Substring(5).Trim();
                     // Sender of !QUIT will close the connection
                     return;
@@ -528,7 +603,7 @@ namespace Replicator
                         Quit("GUID is empty");
                         return;
                     }
-                    if (peerGuid == _selfGuid)
+                    if (peerGuid == SelfGuid)
                     {
                         Quit("GUID is my own");
                         return;
@@ -537,7 +612,7 @@ namespace Replicator
                     PeerGuid = peerGuid;
                     SendFilterState();
                     BuildReplicationState();
-                    SendReplicationState();
+                    // SendReplicationState();
                     return;
                 }
 
@@ -592,43 +667,6 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        private void BuildReplicationState()
-        {
-            _replicationStateQueue = new ConcurrentQueue<KeyValuePair<string, ulong>>();
-            Db.Transact(() =>
-            {
-                ulong databaseCommitId = 0;
-                Replication dbRepl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId = ?", PeerTableIdPrefix).First;
-                if (dbRepl != null)
-                {
-                    databaseCommitId = dbRepl.CommitId;
-                }
-
-                foreach (Replication repl in Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId LIKE ?", PeerTableIdPrefix + '%'))
-                {
-                    // remove table entries that are obsolete
-                    if (repl.TableId != PeerTableIdPrefix && repl.CommitId <= databaseCommitId)
-                    {
-                        repl.Delete();
-                    }
-                    else
-                    {
-                        _replicationStateQueue.Enqueue(new KeyValuePair<string, ulong>(repl.TableId, repl.CommitId));
-                    }
-                }
-            });
-            return;
-        }
-
-        // Can be called from non-SC thread
-        private void HandleSendReplicationStateResult(Task t)
-        {
-            if (t.IsFaulted || t.IsCanceled)
-                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
-            else
-                _dbsess.RunAsync(() => { SendReplicationState(); });
-        }
-
         private void SendFilterState()
         {
             if (_tableFilters != null)
@@ -641,14 +679,72 @@ namespace Replicator
                     {
                         StringSerializer.Serialize(sb, tableName);
                     }
-                    _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
+                    Send(sb);
+                    // _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
                 }
             }
         }
 
         // Must run on a SC thread
+        private void BuildReplicationState()
+        {
+            // _replicationStateQueue = new ConcurrentQueue<KeyValuePair<string, ulong>>();
+            Db.Transact(() =>
+            {
+                ulong databaseCommitId = 0;
+
+                Replication dbRepl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId = ?", PeerTableIdPrefix).First;
+                if (dbRepl != null)
+                {
+                    databaseCommitId = dbRepl.CommitId;
+                }
+
+                var sb = new StringBuilder();
+                foreach (Replication repl in Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId LIKE ?", PeerTableIdPrefix + '%'))
+                {
+                    // remove table entries that are obsolete
+                    if (repl.TableId != PeerTableIdPrefix && repl.CommitId <= databaseCommitId)
+                    {
+                        repl.Delete();
+                    }
+                    else
+                    {
+                        if (sb.Length == 0)
+                            sb.Append("!TPOS ");
+                        StringSerializer.Serialize(sb, StripDatabasePrefix(repl.TableId));
+                        StringSerializer.Serialize(sb, repl.CommitId);
+                        if (sb.Length > 200)
+                        {
+                            Send(sb);
+                        }
+                        // _replicationStateQueue.Enqueue(new KeyValuePair<string, ulong>(repl.TableId, repl.CommitId));
+                    }
+                }
+                Send(sb);
+                Send("!READY");
+            });
+            // _sender.SendStringAsync("!READY", CancellationToken).ContinueWith(HandleSendResult);
+            return;
+        }
+
+        /*
+        // Can be called from non-SC thread
+        private void HandleSendReplicationStateResult(Task t)
+        {
+            if (t.IsFaulted || t.IsCanceled)
+                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
+            else
+                _dbsess.RunAsync(() => { SendReplicationState(); });
+        }
+        */
+
+        /*
+        // Must run on a SC thread
         private void SendReplicationState()
         {
+            if (_replicationStateQueue == null)
+                return;
+
             if (_replicationStateQueue.IsEmpty)
             {
                 _replicationStateQueue = null;
@@ -671,6 +767,13 @@ namespace Replicator
             _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendReplicationStateResult);
             return;
         }
+        */
+
+        // Must run on a SC thread
+        public void Canceled()
+        {
+            Quit("Canceled");
+        }
 
         // Must run on a SC thread
         public void Quit(Exception e)
@@ -682,10 +785,11 @@ namespace Replicator
         // Must run on a SC thread
         public void Quit(string error = "")
         {
-            if (!_isQuitting)
+            if (!IsQuitting)
             {
-                _isQuitting = true;
+                IsQuitting = true;
 
+                /*
                 int firstNewLine = error.IndexOf('\n');
                 string closeStatus = (firstNewLine < 0) ? error : error.Substring(0, firstNewLine);
                 if (closeStatus.Length > 25)
@@ -699,8 +803,11 @@ namespace Replicator
                         closeStatus = closeStatus.Substring(0, closeStatus.Length - 1);
                     }
                 }
+                */
 
+                Send("!QUIT " + error);
                 // _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith(HandleSendResult);
+                /*
                 _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith((t1) => {
                     _dbsess.RunAsync(() => {
                         _sender.CloseAsync((error == "") ? 1000 : 4000, closeStatus, CancellationToken).ContinueWith((t2) =>
@@ -709,6 +816,7 @@ namespace Replicator
                         });
                     });
                 });
+                */
             }
         }
 
@@ -717,11 +825,7 @@ namespace Replicator
             if (!IsDisposed)
             {
                 IsDisposed = true;
-                if (IsPeerGuidSet)
-                {
-                    Console.WriteLine("Replicator: {0} disconnected", PeerGuidString);
-                    PeerGuid = Guid.Empty;
-                }
+                PeerGuid = Guid.Empty;
                 _sender.Dispose();
             }
         }

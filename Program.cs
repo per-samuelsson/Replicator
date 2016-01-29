@@ -65,7 +65,8 @@ namespace Replicator
         private static ReplicationChild _client = null;
         private static ILogManager _servermanager = new LogManager();
         private static ILogManager _clientmanager = new LogManager();
-        private static CancellationTokenSource _cts = new CancellationTokenSource();
+        private static CancellationTokenSource _serverCts = new CancellationTokenSource();
+        private static CancellationTokenSource _clientCts = new CancellationTokenSource();
         private static ParentStatus _parentStatus = new ParentStatus();
         private static bool _replicationEnabled = false;
 
@@ -223,15 +224,15 @@ namespace Replicator
         {
             Disconnect();
             _replicationEnabled = true;
-            _client = new ReplicationChild(_clientmanager, ParentUri, _cts.Token, TablePriorities);
+            _client = new ReplicationChild(_clientmanager, ParentUri, _clientCts.Token, TablePriorities);
         }
 
         static public void Disconnect()
         {
             if (_client != null)
             {
-                _cts.Cancel();
-                _cts = new CancellationTokenSource();
+                _clientCts.Cancel();
+                _clientCts = new CancellationTokenSource();
                 _client = null;
             }
             _replicationEnabled = false;
@@ -268,7 +269,7 @@ namespace Replicator
             Status = "Not connected.";
             new HttpHandlers();
             // new ReplicationTests.ReplicationTests();
-            _server = new ReplicationParent(_servermanager, _cts.Token, TablePriorities);
+            _server = new ReplicationParent(_servermanager, _serverCts.Token, TablePriorities);
 
             foreach (var arg in args)
             {

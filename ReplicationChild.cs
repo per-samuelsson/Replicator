@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Starcounter.Internal;
 using Starcounter.TransactionLog;
+using System.Runtime.ExceptionServices;
 
 namespace Replicator
 {
@@ -23,7 +24,7 @@ namespace Replicator
         {
             if (!_disposed)
             {
-                if (_ws.State == WebSocketState.Open)
+                // if (_ws.State == WebSocketState.Open)
                 {
                     return _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)), WebSocketMessageType.Text, true, cancellationToken);
                 }
@@ -50,7 +51,7 @@ namespace Replicator
         {
             if (!_disposed)
             {
-                if (_ws.State == WebSocketState.Open)
+                // if (_ws.State == WebSocketState.Open)
                 {
                     return _ws.CloseOutputAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
                 }
@@ -120,17 +121,18 @@ namespace Replicator
             {
                 if (t.IsCanceled)
                 {
-                    Console.WriteLine("ReplicationChild.Connect: \"{0}\": Cancelled", _sourceUri);
                     return;
                 }
                 if (t.IsFaulted)
                 {
-                    Console.WriteLine("ReplicationChild.Connect: \"{0}\": Exception {1}", _sourceUri, t.Exception);
+                    ExceptionDispatchInfo.Capture(t.Exception).Throw();
                     return;
                 }
             }
             if (_ct.IsCancellationRequested)
+            {
                 return;
+            }
             Program.Status = "Connecting to " + _sourceUri.ToString();
             _ws = new ClientWebSocket();
             _ws.Options.KeepAliveInterval = TimeSpan.FromDays(1);
@@ -143,7 +145,8 @@ namespace Replicator
             string msg = null;
             if (_source != null)
             {
-                if (_source.IsOk)
+                // TODO: need better heuristic on this
+                if (_source.TransactionsReceived > 0 || _source.TransactionsSent > 0)
                 {
                     ReconnectInterval = _reconnectMinimum;
                 }
@@ -180,9 +183,8 @@ namespace Replicator
 
         public void HandleConnected(Task t)
         {
-            if (t.IsCanceled)
+            if (t.IsCanceled || _ct.IsCancellationRequested)
             {
-                Console.WriteLine("ReplicationChild.HandleConnected: \"{0}\": Cancelled", _sourceUri);
                 return;
             }
             if (t.IsFaulted)
@@ -233,7 +235,10 @@ namespace Replicator
         {
             if (t.IsCanceled)
             {
-                Console.WriteLine("ReplicationChild.HandleReceive: \"{0}\": Cancelled", _sourceUri);
+                if (_source != null)
+                {
+                    _dbsess.RunAsync(_source.Canceled);
+                }
                 return;
             }
             if (t.IsFaulted)
