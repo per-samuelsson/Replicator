@@ -65,33 +65,19 @@ namespace Replicator
         private static ReplicationChild _client = null;
         private static ILogManager _servermanager = new LogManager();
         private static ILogManager _clientmanager = new LogManager();
-        private static CancellationTokenSource _cts = new CancellationTokenSource();
+        private static CancellationTokenSource _serverCts = new CancellationTokenSource();
+        private static CancellationTokenSource _clientCts = new CancellationTokenSource();
         private static ParentStatus _parentStatus = new ParentStatus();
         private static bool _replicationEnabled = false;
 
-        static public Guid GetDatabaseGuid()
-        {
-            return Starcounter.Db.Environment.DatabaseGuid;
-            /*
-            // generate a fake database GUID
-            return new Guid(
-                System.Security.Cryptography.MD5.Create().ComputeHash(
-                    System.Text.Encoding.ASCII.GetBytes(
-                        System.Environment.MachineName + "/" + StarcounterEnvironment.DatabaseNameLower
-                        )
-                    )
-                );
-            */
-        }
-
         static private Configuration GetConfiguration()
         {
-            Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", GetDatabaseGuid().ToString()).First;
+            Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First;
             if (conf == null)
             {
                 conf = new Configuration()
                 {
-                    DatabaseGuid = GetDatabaseGuid().ToString(),
+                    DatabaseGuid = Db.Environment.DatabaseGuid.ToString(),
                     ParentUri = System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort,
                     ParentGuid = "",
                     ReconnectMinimumWaitSeconds = 1,
@@ -238,20 +224,39 @@ namespace Replicator
         {
             Disconnect();
             _replicationEnabled = true;
-            _client = new ReplicationChild(_clientmanager, ParentUri, _cts.Token);
+            _client = new ReplicationChild(_clientmanager, ParentUri, _clientCts.Token, TablePriorities);
         }
 
         static public void Disconnect()
         {
             if (_client != null)
             {
-                _cts.Cancel();
-                _cts = new CancellationTokenSource();
+                _clientCts.Cancel();
+                _clientCts = new CancellationTokenSource();
                 _client = null;
             }
             _replicationEnabled = false;
             Status = "Not connected.";
         }
+
+        static private Dictionary<string, int> TablePriorities
+        {
+            get
+            {
+                /*
+                // For testing, generate random filters
+                var r = new Random();
+                var d = new Dictionary<string, int>();
+                if (r.Next(100) < 50)
+                    d["Invoice"] = r.Next(2);
+                if (r.Next(100) < 50)
+                    d["InvoiceRow"] = r.Next(2);
+                return d.Count > 0 ? d : null;
+                */
+                return null;
+            }
+        }
+
 
         static void Main(string[] args)
         {
@@ -264,9 +269,9 @@ namespace Replicator
             Status = "Not connected.";
 
             new HttpHandlers();
-            new SweOffshore.SweOffshoreSettings();
 
-            _server = new ReplicationParent(_servermanager, _cts.Token);
+            // new ReplicationTests.ReplicationTests();
+            _server = new ReplicationParent(_servermanager, _serverCts.Token, TablePriorities);
 
             foreach (var arg in args)
             {

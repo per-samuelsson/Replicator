@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Starcounter.Internal;
 using Starcounter.TransactionLog;
+using System.Runtime.ExceptionServices;
 
 namespace Replicator
 {
@@ -23,7 +24,7 @@ namespace Replicator
         {
             if (!_disposed)
             {
-                if (_ws.State == WebSocketState.Open)
+                // if (_ws.State == WebSocketState.Open)
                 {
                     return _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)), WebSocketMessageType.Text, true, cancellationToken);
                 }
@@ -50,9 +51,9 @@ namespace Replicator
         {
             if (!_disposed)
             {
-                if (_ws.State == WebSocketState.Open)
+                // if (_ws.State == WebSocketState.Open)
                 {
-                    return _ws.CloseAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
+                    return _ws.CloseOutputAsync((WebSocketCloseStatus)closeStatus, statusMessage, cancellationToken);
                 }
             }
             return Task.FromResult(false);
@@ -81,10 +82,11 @@ namespace Replicator
 
     class ReplicationChild
     {
-        private ILogManager _manager;
+        private readonly ILogManager _manager;
+        private readonly Uri _sourceUri;
+        private readonly CancellationToken _ct;
+        private readonly Dictionary<string, int> _tablePrios;
         private ClientWebSocket _ws = null;
-        private Uri _sourceUri;
-        private CancellationToken _ct;
         private int _reconnectInterval = Program.ReconnectMinimumWaitSeconds;
         private Replicator _source = null;
         private byte[] _rdbuf = new byte[1024];
@@ -94,7 +96,7 @@ namespace Replicator
         private int _reconnectMaximum;
         private bool _isConnected = false;
 
-        public ReplicationChild(ILogManager manager, string parentUri, CancellationToken ct)
+        public ReplicationChild(ILogManager manager, string parentUri, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _manager = manager;
             if (parentUri == "")
@@ -105,6 +107,7 @@ namespace Replicator
                 parentUri = parentUri + Program.ReplicatorServicePath;
             _sourceUri = new Uri(parentUri);
             _ct = ct;
+            _tablePrios = tablePrios;
             _dbsess = new Starcounter.DbSession();
             _reconnectMinimum = Program.ReconnectMinimumWaitSeconds;
             _reconnectMaximum = Program.ReconnectMaximumWaitSeconds;
@@ -118,19 +121,21 @@ namespace Replicator
             {
                 if (t.IsCanceled)
                 {
-                    Console.WriteLine("ReplicationChild.Connect: \"{0}\": Cancelled", _sourceUri);
                     return;
                 }
                 if (t.IsFaulted)
                 {
-                    Console.WriteLine("ReplicationChild.Connect: \"{0}\": Exception {1}", _sourceUri, t.Exception);
+                    ExceptionDispatchInfo.Capture(t.Exception).Throw();
                     return;
                 }
             }
             if (_ct.IsCancellationRequested)
+            {
                 return;
+            }
             Program.Status = "Connecting to " + _sourceUri.ToString();
             _ws = new ClientWebSocket();
+            _ws.Options.KeepAliveInterval = TimeSpan.FromDays(1);
             _ws.ConnectAsync(_sourceUri, _ct).ContinueWith(HandleConnected);
         }
 
@@ -140,6 +145,11 @@ namespace Replicator
             string msg = null;
             if (_source != null)
             {
+                // TODO: need better heuristic on this
+                if (_source.TransactionsReceived > 0 || _source.TransactionsSent > 0)
+                {
+                    ReconnectInterval = _reconnectMinimum;
+                }
                 msg = _source.QuitMessage;
                 _source.Dispose();
                 _source = null;
@@ -173,9 +183,8 @@ namespace Replicator
 
         public void HandleConnected(Task t)
         {
-            if (t.IsCanceled)
+            if (t.IsCanceled || _ct.IsCancellationRequested)
             {
-                Console.WriteLine("ReplicationChild.HandleConnected: \"{0}\": Cancelled", _sourceUri);
                 return;
             }
             if (t.IsFaulted)
@@ -184,8 +193,18 @@ namespace Replicator
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new Replicator(false, _dbsess, new DotNetWebSocketSender(_ws), _manager, _ct);
+            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
+        }
+
+        private void HandleDisconnected(Task t)
+        {
+            if (t.IsFaulted)
+            {
+                Reconnect(t.Exception);
+                return;
+            }
+            Reconnect(null);
         }
 
         public bool IsConnected
@@ -200,7 +219,6 @@ namespace Replicator
                 {
                     if (value)
                     {
-                        ReconnectInterval = _reconnectMinimum;
                         Program.ParentStatus.DatabaseGuid = _source.PeerGuidString;
                         _isConnected = true;
                     }
@@ -217,7 +235,10 @@ namespace Replicator
         {
             if (t.IsCanceled)
             {
-                Console.WriteLine("ReplicationChild.HandleReceive: \"{0}\": Cancelled", _sourceUri);
+                if (_source != null)
+                {
+                    _dbsess.RunAsync(_source.Canceled);
+                }
                 return;
             }
             if (t.IsFaulted)
@@ -245,7 +266,8 @@ namespace Replicator
                     case WebSocketMessageType.Binary:
                         break;
                     case WebSocketMessageType.Close:
-                        break;
+                        _ws.CloseOutputAsync(wsrr.CloseStatus ?? WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).ContinueWith(HandleDisconnected);
+                        return;
                 }
                 _rdlen = 0;
             }

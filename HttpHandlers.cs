@@ -45,7 +45,7 @@ namespace Replicator {
                 if (master.CurrentPartial as Settings == null) {
                     master.CurrentPartial = new Settings()
                     {
-                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Program.GetDatabaseGuid().ToString()).First,
+                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First,
                     };
                     ((Settings)master.CurrentPartial).StatusPartial.Data = Program.ParentStatus;
                 }

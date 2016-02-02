@@ -76,11 +76,12 @@ namespace Replicator
 
     public class ReplicationParent
     {
+        private readonly ILogManager _logmanager;
+        private readonly CancellationToken _ct;
+        private readonly Dictionary<string, int> _tablePrios;
+        private readonly string _logdirectory = TransactionLogDirectory;
         private DbSession _dbsess;
         private ConcurrentDictionary<UInt64, Replicator> _children = new ConcurrentDictionary<UInt64, Replicator>();
-        private string _logdirectory = TransactionLogDirectory;
-        private ILogManager _logmanager;
-        private CancellationToken _ct;
 
         static public string TransactionLogDirectory
         {
@@ -95,10 +96,11 @@ namespace Replicator
             }
         }
 
-        public ReplicationParent(ILogManager manager, CancellationToken ct)
+        public ReplicationParent(ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _logmanager = manager;
             _ct = ct;
+            _tablePrios = tablePrios;
             _dbsess = new DbSession();
             Handle.GET(Program.ReplicatorServicePath, (Request req) => HandleConnect(req));
             Handle.WebSocketDisconnect(Program.ReplicatorWebsocketProtocol, HandleDisconnect);
@@ -108,18 +110,30 @@ namespace Replicator
 
         private Response HandleConnect(Request req)
         {
+            /*
+            if (_ct.IsCancellationRequested)
+            {
+                return new Response()
+                {
+                    StatusCode = 503,
+                    StatusDescription = "Service Unavailable"
+                };
+            }
+            */
+
             try
             {
                 if (!req.WebSocketUpgrade)
                 {
                     return new Response()
                     {
-                        StatusCode = 400
+                        StatusCode = 400,
+                        StatusDescription = "Bad Request"
                     };
                 }
                 UInt64 wsId = req.GetWebSocketId();
                 WebSocket ws = req.SendUpgrade(Program.ReplicatorWebsocketProtocol, null, null, null);
-                _children[wsId] = new Replicator(true, _dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct);
+                _children[wsId] = new Replicator(_dbsess, new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, _tablePrios);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)
@@ -127,6 +141,7 @@ namespace Replicator
                 return new Response()
                 {
                     StatusCode = 500,
+                    StatusDescription = "Internal Server Error",
                     Body = exc.ToString()
                 };
             }
@@ -147,18 +162,14 @@ namespace Replicator
                 sink.Quit(error);
                 return;
             }
+            ws.Send("!QUIT UnknownSocket");
+            ws.Disconnect("Unknown socket");
         }
 
         public void SinkDisposed(ulong wsId)
         {
             Replicator sink;
-            if (!_children.TryRemove(wsId, out sink))
-            {
-                Console.WriteLine("sink wsID={0} not found", wsId);
-                return;
-                // throw new Exception("sink not found");
-            }
-            Console.WriteLine("sink wsID={0} disposed", wsId);
+            _children.TryRemove(wsId, out sink);
         }
 
         private void HandleStringMessage(string data, WebSocket ws)
