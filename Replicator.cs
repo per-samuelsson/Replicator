@@ -117,7 +117,6 @@ namespace Replicator
             StringSerializer.Serialize(sb, Db.Environment.DatabaseName);
             StringSerializer.Serialize(sb, SelfGuid.ToString());
             Send(sb);
-            // _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
         }
 
         private void Send(StringBuilder sb)
@@ -458,7 +457,6 @@ namespace Replicator
             }
 
             Send(StringSerializer.Serialize(new StringBuilder(), t.Result).ToString());
-            // _sender.SendStringAsync(StringSerializer.Serialize(new StringBuilder(), t.Result).ToString(), CancellationToken).ContinueWith(HandleSendResult);
         }
 
         // Must run on a SC thread
@@ -570,7 +568,6 @@ namespace Replicator
                     if (TransactionsReceived == 1 && !IsQuitting)
                     {
                         Send("!OK");
-                        // _sender.SendStringAsync("!OK", CancellationToken).ContinueWith(HandleSendResult);
                     }
                     return;
                 }
@@ -680,7 +677,6 @@ namespace Replicator
                         StringSerializer.Serialize(sb, tableName);
                     }
                     Send(sb);
-                    // _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendResult);
                 }
             }
         }
@@ -723,51 +719,8 @@ namespace Replicator
                 Send(sb);
                 Send("!READY");
             });
-            // _sender.SendStringAsync("!READY", CancellationToken).ContinueWith(HandleSendResult);
             return;
         }
-
-        /*
-        // Can be called from non-SC thread
-        private void HandleSendReplicationStateResult(Task t)
-        {
-            if (t.IsFaulted || t.IsCanceled)
-                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
-            else
-                _dbsess.RunAsync(() => { SendReplicationState(); });
-        }
-        */
-
-        /*
-        // Must run on a SC thread
-        private void SendReplicationState()
-        {
-            if (_replicationStateQueue == null)
-                return;
-
-            if (_replicationStateQueue.IsEmpty)
-            {
-                _replicationStateQueue = null;
-                _sender.SendStringAsync("!READY", CancellationToken).ContinueWith(HandleSendResult);
-                return;
-            }
-
-            KeyValuePair<string, ulong> nextpair;
-            var sb = new StringBuilder();
-            sb.Append("!TPOS ");
-            while (_replicationStateQueue.TryDequeue(out nextpair))
-            {
-                StringSerializer.Serialize(sb, StripDatabasePrefix(nextpair.Key));
-                StringSerializer.Serialize(sb, nextpair.Value);
-                if (sb.Length > 200)
-                {
-                    break;
-                }
-            }
-            _sender.SendStringAsync(sb.ToString(), CancellationToken).ContinueWith(HandleSendReplicationStateResult);
-            return;
-        }
-        */
 
         // Must run on a SC thread
         public void Canceled()
@@ -788,35 +741,7 @@ namespace Replicator
             if (!IsQuitting)
             {
                 IsQuitting = true;
-
-                /*
-                int firstNewLine = error.IndexOf('\n');
-                string closeStatus = (firstNewLine < 0) ? error : error.Substring(0, firstNewLine);
-                if (closeStatus.Length > 25)
-                {
-                    if (closeStatus.Length > 122)
-                    {
-                        closeStatus = closeStatus.Substring(0, 123);
-                    }
-                    while (Encoding.UTF8.GetByteCount(closeStatus) > 123)
-                    {
-                        closeStatus = closeStatus.Substring(0, closeStatus.Length - 1);
-                    }
-                }
-                */
-
                 Send("!QUIT " + error);
-                // _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith(HandleSendResult);
-                /*
-                _sender.SendStringAsync("!QUIT " + error, CancellationToken).ContinueWith((t1) => {
-                    _dbsess.RunAsync(() => {
-                        _sender.CloseAsync((error == "") ? 1000 : 4000, closeStatus, CancellationToken).ContinueWith((t2) =>
-                        {
-                            Dispose();
-                        });
-                    });
-                });
-                */
             }
         }
 

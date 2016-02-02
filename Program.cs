@@ -212,10 +212,14 @@ namespace Replicator
                 new DbSession().RunAsync(() =>
                 {
                     _parentStatus.Message = value == null ? "" : value;
+                    Session.Current?.CalculatePatchAndPushOnWebSocket();
+                    // Session.ForAll has been removed in pnext
+                    /*
                     Session.ForAll((s) =>
                     {
                         s.CalculatePatchAndPushOnWebSocket();
                     });
+                    */
                 });
             }
         }
