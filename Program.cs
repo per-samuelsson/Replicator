@@ -247,17 +247,9 @@ namespace Replicator
         {
             get
             {
-                /*
-                // For testing, generate random filters
-                var r = new Random();
-                var d = new Dictionary<string, int>();
-                if (r.Next(100) < 50)
-                    d["Invoice"] = r.Next(2);
-                if (r.Next(100) < 50)
-                    d["InvoiceRow"] = r.Next(2);
-                return d.Count > 0 ? d : null;
-                */
-                return null;
+                var priorities = new Dictionary<string, int>();
+                SweOffshore.SweOffshoreSettings.BuildTablePriorities(priorities);
+                return priorities;
             }
         }
 
