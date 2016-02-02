@@ -10,7 +10,7 @@ All databases participating in replication require:
 * A version of Starcounter that has the `Starcounter.TransactionLog` assembly.
 * A unique Object ID range (can be set when creating the database using the `Advanced` settings).
 * All except one require the Replicator URI for it's upstream (parent) replication database.
-* You should run the same versions of all applications whose data are being replicated.
+* You must run the same versions of all applications whose data are being replicated.
 
 ## Topology
 
@@ -18,23 +18,19 @@ This Replicator application assumes that all databases participating in replicat
 
 The Replicator will prevent local feedback loops, meaning that when an incoming replicated transaction is applied to the database, the resulting local transaction will not be sent back to the sender (but it will be sent to other connected databases). The Replicator cannot prevent application-level feedback loops caused by commit hooks or similar mechanisms. It also cannot prevent loops if the topology itself contains loops (if any node has itself as a parent somewhere in the chain).
 
+## Selection
+
+The Replicator needs to know what is to be replicated. While it is possible to run the Replicator without a whitelist, replicating everything is only useful to maintain a failover machine or a very simple application. For most use cases, you need to identify the set of database classes that should be replicated and supply that when instantiating the Replicator.
+
+Constructing the whitelist is outside the scope of the Replicator. In fact, it's literally impossible for it to know what's safe or not to replicate. To give you an idea of where to start, if you know the top level namespaces that your set of applications are using, you can find their database classes using `SELECT FullClassName FROM Starcounter.Metadata.ClrClass WHERE FullClassName LIKE "MyApplication.%"`. And remember it's better to start replicating too little than too much.
+
+So why is it bad to replicate too much? Because if you replicate over something that shouldn't have been, it is probably going to be very difficult to analyze what it was and how to safely undo it. On the other hand, if you find out you need to replicate something more, adding it to the whitelist and restarting the Replicator should be enough.
+
 ## Filtering
 
 The `TransactionLog` API will provide all non-system table transactions from a given log position. This includes transactions which may no longer be possible to perform. For instance, if the database class (table) or property (column) no longer exists. Also, it is usually desirable to filter out data which should not be distributed. This may be for a variety of reasons including legal, security, financial or simply to save bandwidth.
 
-The Replicator has a filtering in place, which is an opt-in mechanism using Starcounter handlers. For example, to allow updates for the table "MyCompany.MyApplication" to be sent out, you add a handler like one of these to your Replicator application:
-
-> `Handle.GET("/Replicator/out/MyCompany.MyApplication/{?}", (string destinationGuid) => { return 200; });`
-> `Handle.POST("/Replicator/out/MyCompany.MyApplication/update/{?}", (string destinationGuid) => { return 200; });`
-
-The GET handler would be for the simple use-case of allowing or denying all changes to a given table using only the destination database GUID, and is fairly cheap to call. The POST handler can handle more complex scenarios, and receives a serialized `Starcounter.TransactionLog.update_record_entry` in the body.
-
-The handler must status code `200 OK` to allow sending it, with an optional new `update_record_entry` in the body to send that instead, or `201 No Content` or higher to prevent it from being sent at all. The Replicator will also cache calls that return a `404 Not Found` to improve performance.
-
-To send all transactions for all tables you would use the handler
-> `Handle.GET("/Replicator/out/{?}/{?}", (string tableName, string destinationGuid) => { return 200; });`
-
-*NOTE* That these handlers are currently called using `Self.GET`, so they must be declared in the Replicator application, and the response from them is used to determine whether to send or not, so `UriMapping` cannot be used. In the future we may choose to do this differently, as it makes more sense to have these handlers in the classes for the tables themselves. One possible workaround would be to use `Http.GET` instead, but that obviously incurs a performance penalty.
+The Replicator will provide an `IOperationFilter` interface you can implement and provide an object to a Replicator instance which will then let that object to do filtering on outbound data.
 
 ## Use as backup solution
 
@@ -47,4 +43,4 @@ Replicating data across a distributed system is an excellent [footgun](http://ww
 * Do not delete or rename replicated database classes, as they will still be referenced in old transactions.
 * Do not remove replicated database class properties, for the same reason.
 * Don't start replication until all applications whose data being replicated are fully loaded on the codehost.
-* Don't add tables to what's to be replicated if instances of the class have already been created and the log position has progressed past that point.
+
