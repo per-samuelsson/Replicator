@@ -495,7 +495,10 @@ namespace Replicator
         {
             try
             {
-                Db.Transact(() =>
+                var options = new Db.Advanced.TransactOptions();
+                options.applyHooks = false;
+
+                Db.Advanced.Transact(options, () =>
                 {
                     ulong commitId = lrr.continuation_position.commit_id;
                     if (PeerHasFilters)
