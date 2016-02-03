@@ -213,13 +213,6 @@ namespace Replicator
                 {
                     _parentStatus.Message = value == null ? "" : value;
                     Session.Current?.CalculatePatchAndPushOnWebSocket();
-                    // Session.ForAll has been removed in pnext
-                    /*
-                    Session.ForAll((s) =>
-                    {
-                        s.CalculatePatchAndPushOnWebSocket();
-                    });
-                    */
                 });
             }
         }
@@ -272,7 +265,6 @@ namespace Replicator
             Db.Transact(() => { GetConfiguration(); }); // ensure that configuration object is created
             Status = "Not connected.";
             new HttpHandlers();
-            // new ReplicationTests.ReplicationTests();
             _server = new ReplicationParent(_servermanager, _serverCts.Token, TablePriorities);
 
             foreach (var arg in args)
