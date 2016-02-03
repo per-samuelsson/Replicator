@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Starcounter;
 using Starcounter.Internal;
 using Starcounter.TransactionLog;
+using System.Collections.Concurrent;
 
 namespace Replicator
 {
@@ -70,6 +71,8 @@ namespace Replicator
         private static ParentStatus _parentStatus = new ParentStatus();
         private static bool _replicationEnabled = false;
 
+        public static HashSet<string> MySessions = new HashSet<string>();
+
         static private Configuration GetConfiguration()
         {
             Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First;
@@ -103,7 +106,7 @@ namespace Replicator
                 {
                     Program.Disconnect();
                 }
-
+                RefreshSessions();
             }
         }
 
@@ -142,6 +145,7 @@ namespace Replicator
                 Db.Transact(() => {
                     GetConfiguration().ReconnectMinimumWaitSeconds = value;
                 });
+                RefreshSessions();
             }
         }
 
@@ -166,6 +170,7 @@ namespace Replicator
                 Db.Transact(() => {
                     GetConfiguration().ReconnectMaximumWaitSeconds = value;
                 });
+                RefreshSessions();
             }
         }
 
@@ -186,6 +191,7 @@ namespace Replicator
                     conf.ParentUri = value;
                     conf.ParentGuid = "";
                 });
+                RefreshSessions();
             }
         }
 
@@ -209,11 +215,32 @@ namespace Replicator
             }
             set
             {
-                new DbSession().RunAsync(() =>
+                _parentStatus.Message = value == null ? "" : value;
+                RefreshSessions();
+            }
+        }
+
+        static private void RefreshSessions()
+        {
+            lock (MySessions)
+            {
+                foreach (var s in MySessions)
                 {
-                    _parentStatus.Message = value == null ? "" : value;
-                    Session.Current?.CalculatePatchAndPushOnWebSocket();
-                });
+                    Session.ScheduleTask(s, (session, sessionString) =>
+                    {
+                        if (session == null)
+                        {
+                            lock (MySessions)
+                            {
+                                MySessions.Remove(sessionString);
+                            }
+                        }
+                        else
+                        {
+                            session.CalculatePatchAndPushOnWebSocket();
+                        }
+                    });
+                }
             }
         }
 
@@ -221,7 +248,7 @@ namespace Replicator
         {
             Disconnect();
             _replicationEnabled = true;
-            _client = new ReplicationChild(_clientmanager, ParentUri, _clientCts.Token, TablePriorities);
+            _client = new ReplicationChild(_clientmanager, ParentUri, _clientCts.Token, Whitelist);
         }
 
         static public void Disconnect()
@@ -236,7 +263,7 @@ namespace Replicator
             Status = "Not connected.";
         }
 
-        static private Dictionary<string, int> TablePriorities
+        static private Dictionary<string, int> Whitelist
         {
             get
             {
@@ -265,7 +292,7 @@ namespace Replicator
             Db.Transact(() => { GetConfiguration(); }); // ensure that configuration object is created
             Status = "Not connected.";
             new HttpHandlers();
-            _server = new ReplicationParent(_servermanager, _serverCts.Token, TablePriorities);
+            _server = new ReplicationParent(_servermanager, _serverCts.Token, Whitelist);
 
             foreach (var arg in args)
             {

@@ -6,19 +6,32 @@ namespace Replicator {
         public HttpHandlers() {
             Handle.GET("/Replicator/master", () => {
                 Session session = Session.Current;
-
-                if (session != null && session.Data != null) {
-                    return session.Data;
+                if (session != null)
+                {
+                    lock (Program.MySessions)
+                    {
+                        Program.MySessions.Add(session.ToAsciiString());
+                    }
+                    if (session.Data != null)
+                    {
+                        return session.Data;
+                    }
                 }
 
                 Master master = null;
 
-                Db.Scope(() => {
+                Db.Scope(() =>
+                {
                     master = new Master();
                 });
 
-                if (session == null) {
+                if (session == null)
+                {
                     session = new Session(SessionOptions.PatchVersioning);
+                    lock (Program.MySessions)
+                    {
+                        Program.MySessions.Add(session.ToAsciiString());
+                    }
                 }
 
                 master.Session = session;

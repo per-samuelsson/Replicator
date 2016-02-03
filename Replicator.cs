@@ -24,11 +24,10 @@ namespace Replicator
     {
         private static readonly Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
 
-        private DbSession _dbsess;
-        private IWebSocketSender _sender;
-        private LogApplicator _applicator = new LogApplicator();
+        private readonly DbSession _dbsess;
+        private readonly IWebSocketSender _sender;
+        private readonly LogApplicator _applicator = new LogApplicator();
 
-        // private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
         private Dictionary<string, ulong> _peerTablePositions = null;
         private List<HashSet<string>> _peerTableFilters = null;
         private HashSet<string>[] _tableFilters = null;
@@ -213,6 +212,22 @@ namespace Replicator
             return;
         }
 
+        // Must run on a SC thread
+        private void ProcessFailedSendResult(Task t)
+        {
+            if (t.IsFaulted)
+            {
+                Quit(t.Exception);
+                return;
+            }
+
+            if (t.IsCanceled)
+            {
+                Canceled();
+                return;
+            }
+        }
+
         // Can be called from non-SC thread
         private void HandleSendResult(Task t)
         {
@@ -319,22 +334,6 @@ namespace Replicator
         public bool IsPeerGuidSet
         {
             get { return PeerGuid != Guid.Empty; }
-        }
-
-        // Must run on a SC thread
-        private void ProcessFailedSendResult(Task t)
-        {
-            if (t.IsFaulted)
-            {
-                Quit(t.Exception);
-                return;
-            }
-
-            if (t.IsCanceled)
-            {
-                Canceled();
-                return;
-            }
         }
 
         private void InitializeReader(int index)
@@ -574,9 +573,7 @@ namespace Replicator
                     return;
                 }
 
-
                 // Command processing
-
                 if (message.StartsWith("!OK") && RunState == RunState.Starting)
                 {
                     RunState = RunState.Running;
@@ -610,8 +607,7 @@ namespace Replicator
                     PeerDatabaseName = peerDatabaseName;
                     PeerGuid = peerGuid;
                     SendFilterState();
-                    BuildReplicationState();
-                    // SendReplicationState();
+                    SendReplicationState();
                     return;
                 }
 
@@ -684,9 +680,8 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        private void BuildReplicationState()
+        private void SendReplicationState()
         {
-            // _replicationStateQueue = new ConcurrentQueue<KeyValuePair<string, ulong>>();
             Db.Transact(() =>
             {
                 ulong databaseCommitId = 0;
@@ -715,7 +710,6 @@ namespace Replicator
                         {
                             Send(sb);
                         }
-                        // _replicationStateQueue.Enqueue(new KeyValuePair<string, ulong>(repl.TableId, repl.CommitId));
                     }
                 }
                 Send(sb);
@@ -738,7 +732,7 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        public void Quit(string error = "")
+        public void Quit(string error)
         {
             if (!IsQuitting)
             {
