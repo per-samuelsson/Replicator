@@ -22,6 +22,8 @@ namespace Replicator
 
     public sealed class Replicator : IDisposable, IReplicatorState
     {
+        private static readonly Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
+
         private DbSession _dbsess;
         private IWebSocketSender _sender;
         private LogApplicator _applicator = new LogApplicator();
@@ -45,7 +47,6 @@ namespace Replicator
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
 
         private Guid _peerGuid = Guid.Empty;
-        private Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
 
         static public bool IsTransactionEmpty(TransactionData tran)
         {
