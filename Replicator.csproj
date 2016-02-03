@@ -60,8 +60,7 @@
     <Reference Include="Starcounter.XSON, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d2df1e81d0ca3abf">
       <Private>False</Private>
     </Reference>
-    <Reference Include="Starcounter.TransactionLog">
-      <HintPath>$(StarcounterBin)\Starcounter.TransactionLog.dll</HintPath>    
+    <Reference Include="Starcounter.TransactionLog, Version=1.0.0.0, Culture=neutral">
       <Private>False</Private>
     </Reference>
   </ItemGroup>
