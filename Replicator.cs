@@ -45,6 +45,7 @@ namespace Replicator
         private SemaphoreSlim _logQueueSem = new SemaphoreSlim(1);
 
         private Guid _peerGuid = Guid.Empty;
+        private Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
 
         static public bool IsTransactionEmpty(TransactionData tran)
         {
@@ -495,10 +496,7 @@ namespace Replicator
         {
             try
             {
-                var options = new Db.Advanced.TransactOptions();
-                options.applyHooks = false;
-
-                Db.Advanced.Transact(options, () =>
+                Db.Advanced.Transact(_transactionOptions, () =>
                 {
                     ulong commitId = lrr.continuation_position.commit_id;
                     if (PeerHasFilters)
