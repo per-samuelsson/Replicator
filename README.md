@@ -14,7 +14,7 @@ All databases using log streaming require:
 
 ## Topology
 
-The LogStreamer application assumes that all databases participating can be organized into a tree structure.Each database is allowed one URI to designate it's "parent" database, but may have any number of "children". This parent-child relationship does not regulate data flow; it only specifies that the child database is responsible for maintaining the WebSocket connection to it's parent. Once connected, data flow is bidirectional (but not nessecarily symmetric).
+The LogStreamer application assumes that all databases participating can be organized into a tree structure. Each database is allowed one URI to designate it's "parent" database, but may have any number of "children". This parent-child relationship does not regulate data flow; it only specifies that the child database is responsible for maintaining the WebSocket connection to it's parent. Once connected, data flow is bidirectional (but not nessecarily symmetric).
 
 The LogStreamer will prevent local feedback loops, meaning that when a received transaction is applied to the database, the resulting local transaction will not be sent back to the sender (but it will be sent to other connected databases). The LogStreamer cannot prevent application-level feedback loops caused by commit hooks or similar mechanisms, though it will by default request that it's transactions are run with no commit hooks active. It also cannot prevent loops if the topology itself contains loops (if any node has itself as a parent somewhere in the chain).
 
