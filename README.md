@@ -20,7 +20,7 @@ The LogStreamer will prevent local feedback loops, meaning that when a received 
 
 ## Selection
 
-The LogStreamer needs to know which database classes are to be sent. While it is possible to run without a whitelist, sending everything is only useful to maintain a failover machine or a very simple application. For most use cases, you need to identify the set of database classes that should be sent and supply a list of them when instantiating the Replicator.
+The LogStreamer needs to know which database classes are to be sent. While it is possible to run without a whitelist, sending everything is only useful to maintain a failover machine or a very simple application. For most use cases, you need to identify the set of database classes that should be sent and supply a list of them when instantiating the LogStreamer.
 
 Constructing the whitelist is outside the scope of the LogStreamer. In fact, it's literally impossible for it to know what's safe or not to send. To give you an idea of where to start, if you know the top level namespaces that your set of applications are using, you can find their database classes using `SELECT FullClassName FROM Starcounter.Metadata.ClrClass WHERE FullClassName LIKE "MyApplication.%"`. And remember it's better to start sending too little than too much.
 
