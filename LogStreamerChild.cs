@@ -8,7 +8,7 @@ using Starcounter.Internal;
 using Starcounter.TransactionLog;
 using System.Runtime.ExceptionServices;
 
-namespace Replicator
+namespace LogStreamer
 {
     public class DotNetWebSocketSender : IWebSocketSender
     {
@@ -80,7 +80,7 @@ namespace Replicator
         }
     }
 
-    class ReplicationChild
+    class LogStreamerChild
     {
         private readonly ILogManager _manager;
         private readonly Uri _sourceUri;
@@ -88,22 +88,22 @@ namespace Replicator
         private readonly Dictionary<string, int> _tablePrios;
         private ClientWebSocket _ws = null;
         private int _reconnectInterval = Program.ReconnectMinimumWaitSeconds;
-        private Replicator _source = null;
+        private LogStreamer _source = null;
         private byte[] _rdbuf = new byte[1024];
         private int _rdlen = 0;
         private int _reconnectMinimum;
         private int _reconnectMaximum;
         private bool _isConnected = false;
 
-        public ReplicationChild(ILogManager manager, string parentUri, CancellationToken ct, Dictionary<string, int> tablePrios = null)
+        public LogStreamerChild(ILogManager manager, string parentUri, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _manager = manager;
             if (parentUri == "")
-                parentUri = "ws://" + System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort + Program.ReplicatorServicePath;
+                parentUri = "ws://" + System.Environment.MachineName + ":" + StarcounterEnvironment.Default.UserHttpPort + Program.LogStreamerServicePath;
             if (parentUri.IndexOf("//") < 0)
                 parentUri = "ws://" + parentUri;
             if (parentUri.IndexOf('/', parentUri.IndexOf("//") + 2) < 0)
-                parentUri = parentUri + Program.ReplicatorServicePath;
+                parentUri = parentUri + Program.LogStreamerServicePath;
             _sourceUri = new Uri(parentUri);
             _ct = ct;
             _tablePrios = tablePrios;
@@ -161,7 +161,7 @@ namespace Replicator
                     else
                         msg = e.InnerException.Message;
                 }
-                Console.WriteLine("ReplicationChild.Reconnect: \"{0}\": Exception {1}", _sourceUri, e);
+                Console.WriteLine("LogStreamerChild.Reconnect: \"{0}\": Exception {1}", _sourceUri, e);
             }
             if (msg == null)
                 msg = "";
@@ -191,7 +191,7 @@ namespace Replicator
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new Replicator(new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
+            _source = new LogStreamer(new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 
@@ -235,7 +235,7 @@ namespace Replicator
             {
                 if (_source != null)
                 {
-                    Replicator.ScheduleTask(_source.Canceled);
+                    LogStreamer.ScheduleTask(_source.Canceled);
                 }
                 return;
             }

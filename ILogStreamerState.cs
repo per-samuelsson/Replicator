@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Replicator
+namespace LogStreamer
 {
     public enum RunState
     {
@@ -11,9 +11,9 @@ namespace Replicator
     };
 
     /// <summary>
-    /// Allows inspecting the state of a Replicator.
+    /// Allows inspecting the state of a LogStreamer.
     /// </summary>
-    public interface IReplicatorState
+    public interface ILogStreamerState
     {
         Guid PeerGuid { get; }
         bool IsQuitting { get; }

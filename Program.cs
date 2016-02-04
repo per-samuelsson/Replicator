@@ -6,7 +6,7 @@ using Starcounter.Internal;
 using Starcounter.TransactionLog;
 using System.Collections.Concurrent;
 
-namespace Replicator
+namespace LogStreamer
 {
     [Database]
     public class Configuration
@@ -60,22 +60,22 @@ namespace Replicator
 
     public class Program
     {
-        public const string ReplicatorServicePath = "/Replicator/service";
-        public const string ReplicatorWebsocketProtocol = "sc-replicator";
-        private static ReplicationParent _server = null;
-        private static ReplicationChild _client = null;
+        public const string LogStreamerServicePath = "/LogStreamer/service";
+        public const string LogStreamerWebsocketProtocol = "sc-logstreamer";
+        private static LogStreamerParent _server = null;
+        private static LogStreamerChild _client = null;
         private static ILogManager _servermanager = new LogManager();
         private static ILogManager _clientmanager = new LogManager();
         private static CancellationTokenSource _serverCts = new CancellationTokenSource();
         private static CancellationTokenSource _clientCts = new CancellationTokenSource();
         private static ParentStatus _parentStatus = new ParentStatus();
-        private static bool _replicationEnabled = false;
+        private static bool _streamingEnabled = false;
 
         public static HashSet<string> MySessions = new HashSet<string>();
 
         static private Configuration GetConfiguration()
         {
-            Configuration conf = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First;
+            Configuration conf = Db.SQL<Configuration>("SELECT c FROM LogStreamer.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First;
             if (conf == null)
             {
                 conf = new Configuration()
@@ -90,11 +90,11 @@ namespace Replicator
             return conf;
         }
 
-        static public bool ReplicationEnabled
+        static public bool StreamingEnabled
         {
             get
             {
-                return _replicationEnabled;
+                return _streamingEnabled;
             }
             set
             {
@@ -247,8 +247,8 @@ namespace Replicator
         static public void Connect()
         {
             Disconnect();
-            _replicationEnabled = true;
-            _client = new ReplicationChild(_clientmanager, ParentUri, _clientCts.Token, Whitelist);
+            _streamingEnabled = true;
+            _client = new LogStreamerChild(_clientmanager, ParentUri, _clientCts.Token, Whitelist);
         }
 
         static public void Disconnect()
@@ -259,7 +259,7 @@ namespace Replicator
                 _clientCts = new CancellationTokenSource();
                 _client = null;
             }
-            _replicationEnabled = false;
+            _streamingEnabled = false;
             Status = "Not connected.";
         }
 
@@ -284,7 +284,7 @@ namespace Replicator
 
         static void Main(string[] args)
         {
-            Console.WriteLine("Starting replicator in {0}. Configured key range: {1}", 
+            Console.WriteLine("Starting LogStreamer in {0}. Configured key range: {1}", 
                 Db.Environment.DatabaseName, 
                 ConfiguredDatabaseKeyRangeString
                 );
@@ -292,19 +292,19 @@ namespace Replicator
             Db.Transact(() => { GetConfiguration(); }); // ensure that configuration object is created
             Status = "Not connected.";
             new HttpHandlers();
-            _server = new ReplicationParent(_servermanager, _serverCts.Token, Whitelist);
+            _server = new LogStreamerParent(_servermanager, _serverCts.Token, Whitelist);
 
             foreach (var arg in args)
             {
                 if (arg.Equals("@enabled", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    // Enable the replicator. This will effectively connect
+                    // Enable the LogStreamer. This will effectively connect
                     // to any configured parent.
-                    Program.ReplicationEnabled = true;
+                    Program.StreamingEnabled = true;
                 }
                 else if (false)
                 {
-                    // Support "--replicateall"? "--parent=ip:port"?
+                    // Support "--parent=ip:port"?
                     // TODO:
                 }
                 else

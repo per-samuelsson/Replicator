@@ -7,15 +7,15 @@ using Starcounter;
 using Starcounter.Internal;
 using Starcounter.TransactionLog;
 
-namespace Replicator
+namespace LogStreamer
 {
     public class StarcounterWebSocketSender : IWebSocketSender
     {
-        private ReplicationParent _source;
+        private LogStreamerParent _source;
         private ulong _wsId;
         private WebSocket _ws;
 
-        public StarcounterWebSocketSender(ReplicationParent source, ulong wsId)
+        public StarcounterWebSocketSender(LogStreamerParent source, ulong wsId)
         {
             _source = source;
             _wsId = wsId;
@@ -74,13 +74,13 @@ namespace Replicator
         }
     }
 
-    public class ReplicationParent
+    public class LogStreamerParent
     {
         private readonly ILogManager _logmanager;
         private readonly CancellationToken _ct;
         private readonly Dictionary<string, int> _tablePrios;
         private readonly string _logdirectory = TransactionLogDirectory;
-        private ConcurrentDictionary<UInt64, Replicator> _children = new ConcurrentDictionary<UInt64, Replicator>();
+        private ConcurrentDictionary<UInt64, LogStreamer> _children = new ConcurrentDictionary<UInt64, LogStreamer>();
 
         static public string TransactionLogDirectory
         {
@@ -95,15 +95,15 @@ namespace Replicator
             }
         }
 
-        public ReplicationParent(ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
+        public LogStreamerParent(ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _logmanager = manager;
             _ct = ct;
             _tablePrios = tablePrios;
-            Handle.GET(Program.ReplicatorServicePath, (Request req) => HandleConnect(req));
-            Handle.WebSocketDisconnect(Program.ReplicatorWebsocketProtocol, HandleDisconnect);
-            Handle.WebSocket(Program.ReplicatorWebsocketProtocol, HandleStringMessage);
-            Handle.WebSocket(Program.ReplicatorWebsocketProtocol, HandleBinaryMessage);
+            Handle.GET(Program.LogStreamerServicePath, (Request req) => HandleConnect(req));
+            Handle.WebSocketDisconnect(Program.LogStreamerWebsocketProtocol, HandleDisconnect);
+            Handle.WebSocket(Program.LogStreamerWebsocketProtocol, HandleStringMessage);
+            Handle.WebSocket(Program.LogStreamerWebsocketProtocol, HandleBinaryMessage);
         }
 
         private Response HandleConnect(Request req)
@@ -130,8 +130,8 @@ namespace Replicator
                     };
                 }
                 UInt64 wsId = req.GetWebSocketId();
-                WebSocket ws = req.SendUpgrade(Program.ReplicatorWebsocketProtocol, null, null, null);
-                _children[wsId] = new Replicator(new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, _tablePrios);
+                WebSocket ws = req.SendUpgrade(Program.LogStreamerWebsocketProtocol, null, null, null);
+                _children[wsId] = new LogStreamer(new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, _tablePrios);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)
@@ -147,14 +147,14 @@ namespace Replicator
 
         private void HandleDisconnect(WebSocket ws)
         {
-            Replicator sink;
+            LogStreamer sink;
             if (_children.TryRemove(ws.ToUInt64(), out sink))
                 sink.Dispose();
         }
 
         private void DisconnectSink(string error, WebSocket ws)
         {
-            Replicator sink;
+            LogStreamer sink;
             if (_children.TryGetValue(ws.ToUInt64(), out sink))
             {
                 sink.Quit(error);
@@ -166,7 +166,7 @@ namespace Replicator
 
         public void SinkDisposed(ulong wsId)
         {
-            Replicator sink;
+            LogStreamer sink;
             _children.TryRemove(wsId, out sink);
         }
 
@@ -174,7 +174,7 @@ namespace Replicator
         {
             try
             {
-                Replicator child;
+                LogStreamer child;
                 if (_children.TryGetValue(ws.ToUInt64(), out child))
                 {
                     child.Input.Enqueue(data);
@@ -184,7 +184,7 @@ namespace Replicator
             }
             catch (Exception e)
             {
-                Console.WriteLine("ReplicationParent.HandleStringMessage: {0}", e);
+                Console.WriteLine("LogStreamerParent.HandleStringMessage: {0}", e);
             }
             DisconnectSink("illegal string message", ws);
         }

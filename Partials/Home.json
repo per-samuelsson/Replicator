@@ -1,5 +1,5 @@
 {
-  "Html": "/Replicator/Partials/Home.html",
+  "Html": "/LogStreamer/Partials/Home.html",
   "StatusPartial": {
     "$": { "Reuse": "Status" }
   }

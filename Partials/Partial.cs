@@ -7,7 +7,7 @@ using System;
 using Starcounter;
 using System.Text;
 
-namespace Replicator {
+namespace LogStreamer {
     public class Partial : Page {
         public string ImplicitStandaloneTitle = Application.Current.DisplayName;
 

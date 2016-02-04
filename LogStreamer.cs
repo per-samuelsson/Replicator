@@ -9,18 +9,18 @@ using System.Runtime.ExceptionServices;
 using Starcounter;
 using Starcounter.TransactionLog;
 
-namespace Replicator
+namespace LogStreamer
 {
     [Database]
-    public class Replication
+    public class LastPosition
     {
-        // The GUID of the database + Replicator.TableIdSeparator + table name
+        // The GUID of the database + LogStreamer.TableIdSeparator + table name
         public string TableId;
         // and the last LogPosition we got from them for that table
         public ulong CommitId;
     }
 
-    public sealed class Replicator : IDisposable, IReplicatorState
+    public sealed class LogStreamer : IDisposable, ILogStreamerState
     {
         public const char TableIdSeparator = ':';
 
@@ -33,11 +33,11 @@ namespace Replicator
         private List<HashSet<string>> _peerTableFilters = null;
         private HashSet<string>[] _tableFilters = null;
 
-        // used to synchronize websocket output for the replicator
+        // used to synchronize websocket output
         private SemaphoreSlim _outputSem = new SemaphoreSlim(1);
         private ConcurrentQueue<string> _output = new ConcurrentQueue<string>();
 
-        // used to synchronize websocket input to the replicator
+        // used to synchronize websocket input
         private SemaphoreSlim _inputSem = new SemaphoreSlim(1);
         private ConcurrentQueue<string> _input = new ConcurrentQueue<string>();
 
@@ -54,7 +54,7 @@ namespace Replicator
         /// <param name="a">The action to schedule.</param>
         static public void ScheduleTask(Action a)
         {
-            Scheduling.ScheduleTask(a, Starcounter.Internal.StarcounterEnvironment.InvalidSchedulerId);
+            Scheduling.ScheduleTask(a);
         }
 
         private Guid SelfGuid
@@ -107,7 +107,7 @@ namespace Replicator
         }
 
 
-        public Replicator(IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
+        public LogStreamer(IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _sender = sender;
             LogManager = manager;
@@ -349,7 +349,7 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        private void StartReplication()
+        private void StartStreaming()
         {
             if (CancellationToken.IsCancellationRequested)
                 return;
@@ -469,10 +469,10 @@ namespace Replicator
         private void UpdateCommitId(string table, ulong commitId)
         {
             string tableId = PeerTableIdPrefix + table;
-            Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE TableId = ?", tableId).First;
+            LastPosition repl = Db.SQL<LastPosition>("SELECT p FROM LogStreamer.LastPosition p WHERE TableId = ?", tableId).First;
             if (repl == null)
             {
-                repl = new Replication()
+                repl = new LastPosition()
                 {
                     TableId = tableId,
                     CommitId = commitId,
@@ -612,7 +612,7 @@ namespace Replicator
                     PeerDatabaseName = peerDatabaseName;
                     PeerGuid = peerGuid;
                     SendFilterState();
-                    SendReplicationState();
+                    SendLastPositions();
                     return;
                 }
 
@@ -651,13 +651,13 @@ namespace Replicator
 
                 if (message.StartsWith("!READY"))
                 {
-                    StartReplication();
+                    StartStreaming();
                     return;
                 }
            }
             catch (Exception e)
             {
-                Console.WriteLine("Replicator: \"{0}\": {1}", message, e);
+                Console.WriteLine("LogStreamer: \"{0}\": {1}", message, e);
                 Quit(e);
                 return;
             }
@@ -685,20 +685,20 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        private void SendReplicationState()
+        private void SendLastPositions()
         {
             Db.Transact(() =>
             {
                 ulong databaseCommitId = 0;
 
-                Replication dbRepl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId = ?", PeerTableIdPrefix).First;
+                LastPosition dbRepl = Db.SQL<LastPosition>("SELECT p FROM LogStreamer.LastPosition p WHERE p.TableId = ?", PeerTableIdPrefix).First;
                 if (dbRepl != null)
                 {
                     databaseCommitId = dbRepl.CommitId;
                 }
 
                 var sb = new StringBuilder();
-                foreach (Replication repl in Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId LIKE ?", PeerTableIdPrefix + '%'))
+                foreach (LastPosition repl in Db.SQL<LastPosition>("SELECT p FROM LogStreamer.LastPosition p WHERE p.TableId LIKE ?", PeerTableIdPrefix + '%'))
                 {
                     // remove table entries that are obsolete
                     if (repl.TableId != PeerTableIdPrefix && repl.CommitId <= databaseCommitId)

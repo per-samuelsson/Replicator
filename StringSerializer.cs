@@ -4,7 +4,7 @@ using System.Text;
 using Starcounter.TransactionLog;
 using System.Collections.Generic;
 
-namespace Replicator
+namespace LogStreamer
 {
     public class StringSerializer
     {

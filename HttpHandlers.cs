@@ -1,10 +1,10 @@
 ﻿using System;
 using Starcounter;
 
-namespace Replicator {
+namespace LogStreamer {
     class HttpHandlers {
         public HttpHandlers() {
-            Handle.GET("/Replicator/master", () => {
+            Handle.GET("/LogStreamer/master", () => {
                 Session session = Session.Current;
                 if (session != null)
                 {
@@ -39,8 +39,8 @@ namespace Replicator {
                 return master;
             });
 
-            Handle.GET("/Replicator", () => {
-                var master = (Master)Self.GET("/Replicator/master");
+            Handle.GET("/LogStreamer", () => {
+                var master = (Master)Self.GET("/LogStreamer/master");
 
                 if (master.CurrentPartial as Home == null) {
                     master.CurrentPartial = new Home()
@@ -53,12 +53,12 @@ namespace Replicator {
                 return master;
             });
 
-            Handle.GET("/Replicator/settings", () => {
-                var master = (Master)Self.GET("/Replicator/master");
+            Handle.GET("/LogStreamer/settings", () => {
+                var master = (Master)Self.GET("/LogStreamer/master");
                 if (master.CurrentPartial as Settings == null) {
                     master.CurrentPartial = new Settings()
                     {
-                        Data = Db.SQL<Configuration>("SELECT c FROM Replicator.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First,
+                        Data = Db.SQL<Configuration>("SELECT c FROM LogStreamer.Configuration c WHERE c.DatabaseGuid = ?", Db.Environment.DatabaseGuid.ToString()).First,
                     };
                     ((Settings)master.CurrentPartial).StatusPartial.Data = Program.ParentStatus;
                 }

@@ -4,7 +4,7 @@ using Starcounter;
 using Starcounter.Internal;
 using Starcounter.TransactionLog;
 
-namespace Replicator {
+namespace LogStreamer {
 
     partial class Settings : Partial, IBound<Configuration> {
         static Settings()
@@ -20,7 +20,7 @@ namespace Replicator {
         protected override void OnData()
         {
             base.OnData();
-            this.StatusPartial.Enabled = Program.ReplicationEnabled;
+            this.StatusPartial.Enabled = Program.StreamingEnabled;
         }
 
         void Handle(Input.ParentUri Action)

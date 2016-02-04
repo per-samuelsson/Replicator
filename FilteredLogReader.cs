@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Starcounter;
 using Starcounter.TransactionLog;
 
-namespace Replicator
+namespace LogStreamer
 {
     /// <summary>
     /// FilteredLogReader reads the transaction log looking for transactions 
@@ -17,22 +17,21 @@ namespace Replicator
     /// 
     /// It also does loop filtering based on peer database GUID. All
     /// transactions that contain an insert or update of
-    /// Replicator.Replication where DatabaseGuid equals the peer
+    /// LogStreamer.State where DatabaseGuid equals the peer
     /// will be ignored in entirety.
     /// 
-    /// Finally, no operations on Replicator.Replication itself will be 
-    /// replicated anywhere.
+    /// Finally, no operations on LogStreamer tables will be sent.
     /// </summary>
     class FilteredLogReader
     {
-        private readonly Replicator _replicator;
+        private readonly LogStreamer _logStreamer;
         private Dictionary<string, ulong> _tablePos = null;
         private readonly HashSet<string> _tableFilter;
         private readonly ILogReader _reader;
 
-        public FilteredLogReader(Replicator replicator, Dictionary<string, ulong> tablePos, HashSet<string> tableFilter)
+        public FilteredLogReader(LogStreamer logStreamer, Dictionary<string, ulong> tablePos, HashSet<string> tableFilter)
         {
-            _replicator = replicator;
+            _logStreamer = logStreamer;
 
             // make a copy of the table position dictionary, stripping out prefix
             if (tablePos != null && tablePos.Count > 0)
@@ -58,19 +57,19 @@ namespace Replicator
                 }
             }
 
-            _reader = _replicator.LogManager.OpenLog(Starcounter.Internal.StarcounterEnvironment.DatabaseNameLower, ReplicationParent.TransactionLogDirectory, new LogPosition { commit_id = FindStartCommitId() });
+            _reader = _logStreamer.LogManager.OpenLog(Starcounter.Internal.StarcounterEnvironment.DatabaseNameLower, LogStreamerParent.TransactionLogDirectory, new LogPosition { commit_id = FindStartCommitId() });
         }
 
         public string StripDatabasePrefix(string tableNameOrId)
         {
-            return _replicator.StripDatabasePrefix(tableNameOrId);
+            return _logStreamer.StripDatabasePrefix(tableNameOrId);
         }
 
         public string PeerGuidString
         {
             get
             {
-                return _replicator.PeerGuidString;
+                return _logStreamer.PeerGuidString;
             }
         }
 
@@ -78,7 +77,7 @@ namespace Replicator
         {
             get
             {
-                return _replicator.PeerTableIdPrefix;
+                return _logStreamer.PeerTableIdPrefix;
             }
         }
 
@@ -181,9 +180,9 @@ namespace Replicator
             while (index < tran.creates.Count)
             {
                 var record = tran.creates[index];
-                if (record.table.StartsWith("Replicator."))
+                if (record.table.StartsWith("LogStreamer."))
                 {
-                    if (record.table == "Replicator.Replication" && FilterLoops(record.columns))
+                    if (record.table == "LogStreamer.LastPosition" && FilterLoops(record.columns))
                     {
                         return true;
                     }
@@ -202,9 +201,9 @@ namespace Replicator
             while (index < tran.updates.Count)
             {
                 var record = tran.updates[index];
-                if (record.table.StartsWith("Replicator."))
+                if (record.table.StartsWith("LogStreamer."))
                 {
-                    if (record.table == "Replicator.Replication" && FilterLoops(record.columns))
+                    if (record.table == "LogStreamer.LastPosition" && FilterLoops(record.columns))
                     {
                         return true;
                     }
@@ -223,7 +222,7 @@ namespace Replicator
             while (index < tran.deletes.Count)
             {
                 var record = tran.deletes[index];
-                if (record.table.StartsWith("Replicator."))
+                if (record.table.StartsWith("LogStreamer."))
                 {
                     tran.deletes.RemoveAt(index);
                     continue;

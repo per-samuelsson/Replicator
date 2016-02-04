@@ -1,13 +1,13 @@
 using Starcounter;
 
-namespace Replicator {
+namespace LogStreamer {
 
     partial class Home : Partial {
 
         protected override void OnData()
         {
             base.OnData();
-            this.StatusPartial.Enabled = Program.ReplicationEnabled;
+            this.StatusPartial.Enabled = Program.StreamingEnabled;
         }
     }
 }
