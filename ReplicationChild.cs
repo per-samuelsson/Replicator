@@ -91,7 +91,6 @@ namespace Replicator
         private Replicator _source = null;
         private byte[] _rdbuf = new byte[1024];
         private int _rdlen = 0;
-        private Starcounter.DbSession _dbsess = null;
         private int _reconnectMinimum;
         private int _reconnectMaximum;
         private bool _isConnected = false;
@@ -108,7 +107,6 @@ namespace Replicator
             _sourceUri = new Uri(parentUri);
             _ct = ct;
             _tablePrios = tablePrios;
-            _dbsess = new Starcounter.DbSession();
             _reconnectMinimum = Program.ReconnectMinimumWaitSeconds;
             _reconnectMaximum = Program.ReconnectMaximumWaitSeconds;
             Connect(null);
@@ -193,7 +191,7 @@ namespace Replicator
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new Replicator(_dbsess, new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
+            _source = new Replicator(new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 
@@ -237,7 +235,7 @@ namespace Replicator
             {
                 if (_source != null)
                 {
-                    _dbsess.RunAsync(_source.Canceled);
+                    Replicator.ScheduleTask(_source.Canceled);
                 }
                 return;
             }

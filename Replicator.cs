@@ -3,18 +3,18 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Starcounter;
-using Starcounter.TransactionLog;
 using System.IO;
 using System.Text;
 using System.Runtime.ExceptionServices;
+using Starcounter;
+using Starcounter.TransactionLog;
 
 namespace Replicator
 {
     [Database]
     public class Replication
     {
-        // The GUID of the database + ':' + table name
+        // The GUID of the database + Replicator.TableIdSeparator + table name
         public string TableId;
         // and the last LogPosition we got from them for that table
         public ulong CommitId;
@@ -22,9 +22,10 @@ namespace Replicator
 
     public sealed class Replicator : IDisposable, IReplicatorState
     {
-        private static readonly Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
+        public const char TableIdSeparator = ':';
 
-        private readonly DbSession _dbsess;
+        static private readonly Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
+
         private readonly IWebSocketSender _sender;
         private readonly LogApplicator _applicator = new LogApplicator();
 
@@ -47,9 +48,13 @@ namespace Replicator
 
         private Guid _peerGuid = Guid.Empty;
 
-        static public bool IsTransactionEmpty(TransactionData tran)
+        /// <summary>
+        /// Schedule an Action to run on a Starcounter scheduler thread.
+        /// </summary>
+        /// <param name="a">The action to schedule.</param>
+        static public void ScheduleTask(Action a)
         {
-            return tran.updates.Count == 0 && tran.creates.Count == 0 && tran.deletes.Count == 0;
+            Scheduling.ScheduleTask(a, Starcounter.Internal.StarcounterEnvironment.InvalidSchedulerId);
         }
 
         private Guid SelfGuid
@@ -102,9 +107,8 @@ namespace Replicator
         }
 
 
-        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
+        public Replicator(IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
-            _dbsess = dbsess;
             _sender = sender;
             LogManager = manager;
             CancellationToken = ct;
@@ -118,21 +122,6 @@ namespace Replicator
             StringSerializer.Serialize(sb, Db.Environment.DatabaseName);
             StringSerializer.Serialize(sb, SelfGuid.ToString());
             Send(sb);
-        }
-
-        private void Send(StringBuilder sb)
-        {
-            if (sb.Length > 0)
-            {
-                Send(sb.ToString());
-                sb.Clear();
-            }
-        }
-
-        private void Send(string s)
-        {
-            _output.Enqueue(s);
-            ProcessOutput();
         }
 
         private void BuildFilters(Dictionary<string, int> tablePrios)
@@ -150,7 +139,7 @@ namespace Replicator
                     tableSet = new HashSet<string>();
                     sortedTableFilters[kv.Value] = tableSet;
                 }
-                tableSet.Add(kv.Key);
+                tableSet.Add(StripDatabasePrefix(kv.Key));
             }
 
             int index = 0;
@@ -164,7 +153,7 @@ namespace Replicator
 
         public string StripDatabasePrefix(string tableNameOrId)
         {
-            if (tableNameOrId.IndexOf(':') == -1)
+            if (tableNameOrId.IndexOf(TableIdSeparator) == -1)
             {
                 return tableNameOrId;
             }
@@ -175,6 +164,22 @@ namespace Replicator
             throw new ArgumentException("tableNameOrId had wrong database id prefix");
         }
 
+        // Must run in a SC thread
+        private void Send(StringBuilder sb)
+        {
+            if (sb.Length > 0)
+            {
+                Send(sb.ToString());
+                sb.Clear();
+            }
+        }
+
+        // Must run in a SC thread
+        private void Send(string s)
+        {
+            _output.Enqueue(s);
+            ProcessOutput();
+        }
 
         // Must run in a SC thread
         public void ProcessOutput()
@@ -234,11 +239,11 @@ namespace Replicator
             _outputSem.Release();
             if (t.IsFaulted || t.IsCanceled)
             {
-                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
+                ScheduleTask(() => { ProcessFailedSendResult(t); });
             }
             else
             {
-                _dbsess.RunAsync(ProcessOutput);
+                ScheduleTask(ProcessOutput);
             }
             return;
         }
@@ -267,7 +272,7 @@ namespace Replicator
             if (_inputSem.Wait(0))
             {
                 _inputSem.Release();
-                _dbsess.RunAsync(ProcessInput);
+                ScheduleTask(ProcessInput);
             }
             return;
         }
@@ -295,7 +300,7 @@ namespace Replicator
             {
                 _peerGuid = value;
                 PeerGuidString = _peerGuid.ToString();
-                PeerTableIdPrefix = PeerGuidString + ':';
+                PeerTableIdPrefix = PeerGuidString + TableIdSeparator;
             }
         }
 
@@ -408,7 +413,7 @@ namespace Replicator
             if (_logQueueSem.Wait(0))
             {
                 _logQueueSem.Release();
-                _dbsess.RunAsync(ProcessLogQueue);
+                ScheduleTask(ProcessLogQueue);
             }
             return;
         }
@@ -418,7 +423,7 @@ namespace Replicator
             if (_logQueueSem.Wait(0))
             {
                 _logQueueSem.Release();
-                _dbsess.RunAsync(ProcessLogQueue);
+                ScheduleTask(ProcessLogQueue);
             }
         }
 
@@ -519,7 +524,7 @@ namespace Replicator
                 {
                     if (code == 4230 || code == 4177)
                     {
-                        // bisect transaction with current loaded classes to find which ones are missing
+                        // compare transaction classes with currently loaded classes to find which ones are missing
                         var tableset = new HashSet<string>();
                         ForAllTablesInTransaction(lrr, (tableName) => tableset.Add(tableName));
                         Db.Transact(() =>
