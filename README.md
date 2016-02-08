@@ -1,3 +1,2 @@
-# SweOffshore Replicator
-
-This is the SweOffshore replicator, a fork of the standard [Starcounter replicator sample](https://github.com/Starcounter/Replicator).
+# SweOffshore LogStreamer
+This is the SweOffshore log streamer, a fork of the standard [Starcounter LogStreamer app](https://github.com/StarcounterPrefabs/LogStreamer).

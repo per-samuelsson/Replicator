@@ -3,39 +3,40 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Starcounter;
-using Starcounter.TransactionLog;
 using System.IO;
 using System.Text;
 using System.Runtime.ExceptionServices;
+using Starcounter;
+using Starcounter.TransactionLog;
 
-namespace Replicator
+namespace LogStreamer
 {
-    [Database]
-    public class Replication
+    public class LogStreamerSession : IDisposable
     {
-        // The GUID of the database + ':' + table name
-        public string TableId;
-        // and the last LogPosition we got from them for that table
-        public ulong CommitId;
-    }
+        public enum RunState
+        {
+            Created,
+            Starting,
+            Running,
+            Stopping
+        };
 
-    public sealed class Replicator : IDisposable, IReplicatorState
-    {
-        private DbSession _dbsess;
-        private IWebSocketSender _sender;
-        private LogApplicator _applicator = new LogApplicator();
+        public const char TableIdSeparator = ':';
 
-        // private ConcurrentQueue<KeyValuePair<string, ulong>> _replicationStateQueue = null;
+        static private readonly Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
+
+        private readonly IWebSocketSender _sender;
+        private readonly LogApplicator _applicator = new LogApplicator();
+
         private Dictionary<string, ulong> _peerTablePositions = null;
         private List<HashSet<string>> _peerTableFilters = null;
         private HashSet<string>[] _tableFilters = null;
 
-        // used to synchronize websocket output for the replicator
+        // used to synchronize websocket output
         private SemaphoreSlim _outputSem = new SemaphoreSlim(1);
         private ConcurrentQueue<string> _output = new ConcurrentQueue<string>();
 
-        // used to synchronize websocket input to the replicator
+        // used to synchronize websocket input
         private SemaphoreSlim _inputSem = new SemaphoreSlim(1);
         private ConcurrentQueue<string> _input = new ConcurrentQueue<string>();
 
@@ -46,9 +47,13 @@ namespace Replicator
 
         private Guid _peerGuid = Guid.Empty;
 
-        static public bool IsTransactionEmpty(TransactionData tran)
+        /// <summary>
+        /// Schedule an Action to run on a Starcounter scheduler thread.
+        /// </summary>
+        /// <param name="a">The action to schedule.</param>
+        static public void ScheduleTask(Action a)
         {
-            return tran.updates.Count == 0 && tran.creates.Count == 0 && tran.deletes.Count == 0;
+            Scheduling.ScheduleTask(a);
         }
 
         private Guid SelfGuid
@@ -65,7 +70,7 @@ namespace Replicator
             private set;
         }
 
-        public RunState RunState
+        public RunState State
         {
             get;
             private set;
@@ -101,9 +106,8 @@ namespace Replicator
         }
 
 
-        public Replicator(DbSession dbsess, IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
+        public LogStreamerSession(IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
-            _dbsess = dbsess;
             _sender = sender;
             LogManager = manager;
             CancellationToken = ct;
@@ -111,27 +115,12 @@ namespace Replicator
             {
                 BuildFilters(tablePrios);
             }
-            RunState = RunState.Starting;
+            State = RunState.Starting;
             var sb = new StringBuilder();
             sb.Append("!ID ");
             StringSerializer.Serialize(sb, Db.Environment.DatabaseName);
             StringSerializer.Serialize(sb, SelfGuid.ToString());
             Send(sb);
-        }
-
-        private void Send(StringBuilder sb)
-        {
-            if (sb.Length > 0)
-            {
-                Send(sb.ToString());
-                sb.Clear();
-            }
-        }
-
-        private void Send(string s)
-        {
-            _output.Enqueue(s);
-            ProcessOutput();
         }
 
         private void BuildFilters(Dictionary<string, int> tablePrios)
@@ -149,7 +138,7 @@ namespace Replicator
                     tableSet = new HashSet<string>();
                     sortedTableFilters[kv.Value] = tableSet;
                 }
-                tableSet.Add(kv.Key);
+                tableSet.Add(StripDatabasePrefix(kv.Key));
             }
 
             int index = 0;
@@ -163,7 +152,7 @@ namespace Replicator
 
         public string StripDatabasePrefix(string tableNameOrId)
         {
-            if (tableNameOrId.IndexOf(':') == -1)
+            if (tableNameOrId.IndexOf(TableIdSeparator) == -1)
             {
                 return tableNameOrId;
             }
@@ -174,6 +163,22 @@ namespace Replicator
             throw new ArgumentException("tableNameOrId had wrong database id prefix");
         }
 
+        // Must run in a SC thread
+        private void Send(StringBuilder sb)
+        {
+            if (sb.Length > 0)
+            {
+                Send(sb.ToString());
+                sb.Clear();
+            }
+        }
+
+        // Must run in a SC thread
+        private void Send(string s)
+        {
+            _output.Enqueue(s);
+            ProcessOutput();
+        }
 
         // Must run in a SC thread
         public void ProcessOutput()
@@ -211,17 +216,33 @@ namespace Replicator
             return;
         }
 
+        // Must run on a SC thread
+        private void ProcessFailedSendResult(Task t)
+        {
+            if (t.IsFaulted)
+            {
+                Quit(t.Exception);
+                return;
+            }
+
+            if (t.IsCanceled)
+            {
+                Canceled();
+                return;
+            }
+        }
+
         // Can be called from non-SC thread
         private void HandleSendResult(Task t)
         {
             _outputSem.Release();
             if (t.IsFaulted || t.IsCanceled)
             {
-                _dbsess.RunAsync(() => { ProcessFailedSendResult(t); });
+                ScheduleTask(() => { ProcessFailedSendResult(t); });
             }
             else
             {
-                _dbsess.RunAsync(ProcessOutput);
+                ScheduleTask(ProcessOutput);
             }
             return;
         }
@@ -250,7 +271,7 @@ namespace Replicator
             if (_inputSem.Wait(0))
             {
                 _inputSem.Release();
-                _dbsess.RunAsync(ProcessInput);
+                ScheduleTask(ProcessInput);
             }
             return;
         }
@@ -278,7 +299,7 @@ namespace Replicator
             {
                 _peerGuid = value;
                 PeerGuidString = _peerGuid.ToString();
-                PeerTableIdPrefix = PeerGuidString + ':';
+                PeerTableIdPrefix = PeerGuidString + TableIdSeparator;
             }
         }
 
@@ -319,22 +340,6 @@ namespace Replicator
             get { return PeerGuid != Guid.Empty; }
         }
 
-        // Must run on a SC thread
-        private void ProcessFailedSendResult(Task t)
-        {
-            if (t.IsFaulted)
-            {
-                Quit(t.Exception);
-                return;
-            }
-
-            if (t.IsCanceled)
-            {
-                Canceled();
-                return;
-            }
-        }
-
         private void InitializeReader(int index)
         {
             var reader = new FilteredLogReader(this, _peerTablePositions, _tableFilters == null ? null : _tableFilters[index]);
@@ -343,7 +348,7 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        private void StartReplication()
+        private void StartStreaming()
         {
             if (CancellationToken.IsCancellationRequested)
                 return;
@@ -407,7 +412,7 @@ namespace Replicator
             if (_logQueueSem.Wait(0))
             {
                 _logQueueSem.Release();
-                _dbsess.RunAsync(ProcessLogQueue);
+                ScheduleTask(ProcessLogQueue);
             }
             return;
         }
@@ -417,7 +422,7 @@ namespace Replicator
             if (_logQueueSem.Wait(0))
             {
                 _logQueueSem.Release();
-                _dbsess.RunAsync(ProcessLogQueue);
+                ScheduleTask(ProcessLogQueue);
             }
         }
 
@@ -463,10 +468,10 @@ namespace Replicator
         private void UpdateCommitId(string table, ulong commitId)
         {
             string tableId = PeerTableIdPrefix + table;
-            Replication repl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE TableId = ?", tableId).First;
+            LastPosition repl = Db.SQL<LastPosition>("SELECT p FROM LogStreamer.LastPosition p WHERE TableId = ?", tableId).First;
             if (repl == null)
             {
-                repl = new Replication()
+                repl = new LastPosition()
                 {
                     TableId = tableId,
                     CommitId = commitId,
@@ -495,10 +500,7 @@ namespace Replicator
         {
             try
             {
-                var options = new Db.Advanced.TransactOptions();
-                options.applyHooks = false;
-
-                Db.Advanced.Transact(options, () =>
+                Db.Advanced.Transact(_transactionOptions, () =>
                 {
                     ulong commitId = lrr.continuation_position.commit_id;
                     if (PeerHasFilters)
@@ -521,7 +523,7 @@ namespace Replicator
                 {
                     if (code == 4230 || code == 4177)
                     {
-                        // bisect transaction with current loaded classes to find which ones are missing
+                        // compare transaction classes with currently loaded classes to find which ones are missing
                         var tableset = new HashSet<string>();
                         ForAllTablesInTransaction(lrr, (tableName) => tableset.Add(tableName));
                         Db.Transact(() =>
@@ -575,12 +577,10 @@ namespace Replicator
                     return;
                 }
 
-
                 // Command processing
-
-                if (message.StartsWith("!OK") && RunState == RunState.Starting)
+                if (message.StartsWith("!OK") && State == RunState.Starting)
                 {
-                    RunState = RunState.Running;
+                    State = RunState.Running;
                     return;
                 }
 
@@ -611,8 +611,7 @@ namespace Replicator
                     PeerDatabaseName = peerDatabaseName;
                     PeerGuid = peerGuid;
                     SendFilterState();
-                    BuildReplicationState();
-                    // SendReplicationState();
+                    SendLastPositions();
                     return;
                 }
 
@@ -651,13 +650,13 @@ namespace Replicator
 
                 if (message.StartsWith("!READY"))
                 {
-                    StartReplication();
+                    StartStreaming();
                     return;
                 }
            }
             catch (Exception e)
             {
-                Console.WriteLine("Replicator: \"{0}\": {1}", message, e);
+                Console.WriteLine("LogStreamer: \"{0}\": {1}", message, e);
                 Quit(e);
                 return;
             }
@@ -685,21 +684,20 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        private void BuildReplicationState()
+        private void SendLastPositions()
         {
-            // _replicationStateQueue = new ConcurrentQueue<KeyValuePair<string, ulong>>();
             Db.Transact(() =>
             {
                 ulong databaseCommitId = 0;
 
-                Replication dbRepl = Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId = ?", PeerTableIdPrefix).First;
+                LastPosition dbRepl = Db.SQL<LastPosition>("SELECT p FROM LogStreamer.LastPosition p WHERE p.TableId = ?", PeerTableIdPrefix).First;
                 if (dbRepl != null)
                 {
                     databaseCommitId = dbRepl.CommitId;
                 }
 
                 var sb = new StringBuilder();
-                foreach (Replication repl in Db.SQL<Replication>("SELECT r FROM Replicator.Replication r WHERE r.TableId LIKE ?", PeerTableIdPrefix + '%'))
+                foreach (LastPosition repl in Db.SQL<LastPosition>("SELECT p FROM LogStreamer.LastPosition p WHERE p.TableId LIKE ?", PeerTableIdPrefix + '%'))
                 {
                     // remove table entries that are obsolete
                     if (repl.TableId != PeerTableIdPrefix && repl.CommitId <= databaseCommitId)
@@ -716,7 +714,6 @@ namespace Replicator
                         {
                             Send(sb);
                         }
-                        // _replicationStateQueue.Enqueue(new KeyValuePair<string, ulong>(repl.TableId, repl.CommitId));
                     }
                 }
                 Send(sb);
@@ -739,7 +736,7 @@ namespace Replicator
         }
 
         // Must run on a SC thread
-        public void Quit(string error = "")
+        public void Quit(string error)
         {
             if (!IsQuitting)
             {

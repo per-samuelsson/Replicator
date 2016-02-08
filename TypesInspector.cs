@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Starcounter;
 
-namespace Replicator
+namespace LogStreamer
 {
     static class TypesInspector
     {

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using Starcounter;
 using Starcounter.TransactionLog;
 
-namespace Replicator
+namespace LogStreamer
 {
     public class OperationFilterSample : IOperationFilter
     {
@@ -12,8 +12,8 @@ namespace Replicator
 
         public bool FilterCreate(string destination, create_record_entry record)
         {
-            string baseUri = "/Replicator/out/" + record.table + "/";
-            bool retv = true; // block replication by default
+            string baseUri = "/LogStreamer/out/" + record.table + "/";
+            bool retv = true; // block sending by default
             Response response;
             lock (_negativeCache)
             {
@@ -26,7 +26,7 @@ namespace Replicator
                     }
                     else if (response.StatusCode == 200)
                     {
-                        // 200 will allow replication unless POST forbids it
+                        // 200 will allow sending unless POST forbids it
                         retv = false;
                         if (response.Body != null)
                         {
@@ -62,8 +62,8 @@ namespace Replicator
 
         public bool FilterUpdate(string destination, update_record_entry record)
         {
-            string baseUri = "/Replicator/out/" + record.table + "/";
-            bool retv = true; // block replication by default
+            string baseUri = "/LogStreamer/out/" + record.table + "/";
+            bool retv = true; // block sending by default
             Response response;
             lock (_negativeCache)
             {
@@ -76,7 +76,7 @@ namespace Replicator
                     }
                     else if (response.StatusCode == 200)
                     {
-                        // 200 will allow replication unless POST forbids it
+                        // 200 will allow sending unless POST forbids it
                         retv = false;
                         if (response.Body != null)
                         {
@@ -112,8 +112,8 @@ namespace Replicator
 
         public bool FilterDelete(string destination, delete_record_entry record)
         {
-            string baseUri = "/Replicator/out/" + record.table + "/";
-            bool retv = true; // block replication by default
+            string baseUri = "/LogStreamer/out/" + record.table + "/";
+            bool retv = true; // block sending by default
             Response response;
             lock (_negativeCache)
             {
@@ -126,7 +126,7 @@ namespace Replicator
                     }
                     else if (response.StatusCode == 200)
                     {
-                        // 200 will allow replication unless POST forbids it
+                        // 200 will allow sending unless POST forbids it
                         retv = false;
                         if (response.Body != null)
                         {

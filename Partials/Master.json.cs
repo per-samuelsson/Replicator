@@ -1,6 +1,6 @@
 using Starcounter;
 
-namespace Replicator {
+namespace LogStreamer {
     partial class Master : Partial {
     }
 }

@@ -4,7 +4,7 @@ using Starcounter.Metadata;
 using System;
 using System.Collections.Generic;
 
-namespace Replicator.SweOffshore
+namespace SweOffshore
 {
     public class SweOffshoreSettings
     {

@@ -1,12 +1,12 @@
 using Starcounter;
 
-namespace Replicator
+namespace LogStreamer
 {
     partial class Status : Partial
     {
         void Handle(Input.Enabled Action)
         {
-            Program.ReplicationEnabled = Action.Value;
+            Program.StreamingEnabled = Action.Value;
         }
     }
 }
