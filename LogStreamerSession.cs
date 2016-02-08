@@ -11,16 +11,16 @@ using Starcounter.TransactionLog;
 
 namespace LogStreamer
 {
-    public enum RunState
+    public class LogStreamerSession : IDisposable
     {
-        Created,
-        Starting,
-        Running,
-        Stopping
-    };
+        public enum RunState
+        {
+            Created,
+            Starting,
+            Running,
+            Stopping
+        };
 
-    public sealed class LogStreamerSession : IDisposable
-    {
         public const char TableIdSeparator = ':';
 
         static private readonly Db.Advanced.TransactOptions _transactionOptions = new Db.Advanced.TransactOptions() { applyHooks = false };
@@ -70,7 +70,7 @@ namespace LogStreamer
             private set;
         }
 
-        public RunState RunState
+        public RunState State
         {
             get;
             private set;
@@ -115,7 +115,7 @@ namespace LogStreamer
             {
                 BuildFilters(tablePrios);
             }
-            RunState = RunState.Starting;
+            State = RunState.Starting;
             var sb = new StringBuilder();
             sb.Append("!ID ");
             StringSerializer.Serialize(sb, Db.Environment.DatabaseName);
@@ -578,9 +578,9 @@ namespace LogStreamer
                 }
 
                 // Command processing
-                if (message.StartsWith("!OK") && RunState == RunState.Starting)
+                if (message.StartsWith("!OK") && State == RunState.Starting)
                 {
-                    RunState = RunState.Running;
+                    State = RunState.Running;
                     return;
                 }
 
