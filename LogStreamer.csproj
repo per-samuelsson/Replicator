@@ -69,6 +69,7 @@
     <Compile Include="HttpHandlers.cs" />
     <Compile Include="ILogStreamerState.cs" />
     <Compile Include="IWebSocketSender.cs" />
+    <Compile Include="LogStreamerOptions.cs" />
     <Compile Include="Partials\Home.json.cs">
       <DependentUpon>Home.json</DependentUpon>
     </Compile>
@@ -84,7 +85,7 @@
     </Compile>
     <Compile Include="FilteredLogReader.cs" />
     <Compile Include="OperationFilterSample.cs" />
-    <Compile Include="LogStreamer.cs" />
+    <Compile Include="LogStreamerSession.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="LogStreamerChild.cs" />

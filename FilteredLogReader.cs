@@ -24,12 +24,12 @@ namespace LogStreamer
     /// </summary>
     class FilteredLogReader
     {
-        private readonly LogStreamer _logStreamer;
+        private readonly LogStreamerSession _logStreamer;
         private Dictionary<string, ulong> _tablePos = null;
         private readonly HashSet<string> _tableFilter;
         private readonly ILogReader _reader;
 
-        public FilteredLogReader(LogStreamer logStreamer, Dictionary<string, ulong> tablePos, HashSet<string> tableFilter)
+        public FilteredLogReader(LogStreamerSession logStreamer, Dictionary<string, ulong> tablePos, HashSet<string> tableFilter)
         {
             _logStreamer = logStreamer;
 

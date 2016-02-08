@@ -88,7 +88,7 @@ namespace LogStreamer
         private readonly Dictionary<string, int> _tablePrios;
         private ClientWebSocket _ws = null;
         private int _reconnectInterval = Program.ReconnectMinimumWaitSeconds;
-        private LogStreamer _source = null;
+        private LogStreamerSession _source = null;
         private byte[] _rdbuf = new byte[1024];
         private int _rdlen = 0;
         private int _reconnectMinimum;
@@ -191,7 +191,7 @@ namespace LogStreamer
                 return;
             }
             Program.Status = "Connected to " + _sourceUri.ToString();
-            _source = new LogStreamer(new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
+            _source = new LogStreamerSession(new DotNetWebSocketSender(_ws), _manager, _ct, _tablePrios);
             _ws.ReceiveAsync(new ArraySegment<byte>(_rdbuf), _ct).ContinueWith(HandleReceive);
         }
 
@@ -235,7 +235,7 @@ namespace LogStreamer
             {
                 if (_source != null)
                 {
-                    LogStreamer.ScheduleTask(_source.Canceled);
+                    LogStreamerSession.ScheduleTask(_source.Canceled);
                 }
                 return;
             }

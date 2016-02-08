@@ -11,16 +11,7 @@ using Starcounter.TransactionLog;
 
 namespace LogStreamer
 {
-    [Database]
-    public class LastPosition
-    {
-        // The GUID of the database + LogStreamer.TableIdSeparator + table name
-        public string TableId;
-        // and the last LogPosition we got from them for that table
-        public ulong CommitId;
-    }
-
-    public sealed class LogStreamer : IDisposable, ILogStreamerState
+    public sealed class LogStreamerSession : IDisposable, ILogStreamerState
     {
         public const char TableIdSeparator = ':';
 
@@ -107,7 +98,7 @@ namespace LogStreamer
         }
 
 
-        public LogStreamer(IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
+        public LogStreamerSession(IWebSocketSender sender, ILogManager manager, CancellationToken ct, Dictionary<string, int> tablePrios = null)
         {
             _sender = sender;
             LogManager = manager;

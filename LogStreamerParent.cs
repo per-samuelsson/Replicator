@@ -80,7 +80,7 @@ namespace LogStreamer
         private readonly CancellationToken _ct;
         private readonly Dictionary<string, int> _tablePrios;
         private readonly string _logdirectory = TransactionLogDirectory;
-        private ConcurrentDictionary<UInt64, LogStreamer> _children = new ConcurrentDictionary<UInt64, LogStreamer>();
+        private ConcurrentDictionary<UInt64, LogStreamerSession> _children = new ConcurrentDictionary<UInt64, LogStreamerSession>();
 
         static public string TransactionLogDirectory
         {
@@ -131,7 +131,7 @@ namespace LogStreamer
                 }
                 UInt64 wsId = req.GetWebSocketId();
                 WebSocket ws = req.SendUpgrade(Program.LogStreamerWebsocketProtocol, null, null, null);
-                _children[wsId] = new LogStreamer(new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, _tablePrios);
+                _children[wsId] = new LogStreamerSession(new StarcounterWebSocketSender(this, wsId), _logmanager, _ct, _tablePrios);
                 return HandlerStatus.Handled;
             }
             catch (Exception exc)
@@ -147,14 +147,14 @@ namespace LogStreamer
 
         private void HandleDisconnect(WebSocket ws)
         {
-            LogStreamer sink;
+            LogStreamerSession sink;
             if (_children.TryRemove(ws.ToUInt64(), out sink))
                 sink.Dispose();
         }
 
         private void DisconnectSink(string error, WebSocket ws)
         {
-            LogStreamer sink;
+            LogStreamerSession sink;
             if (_children.TryGetValue(ws.ToUInt64(), out sink))
             {
                 sink.Quit(error);
@@ -166,7 +166,7 @@ namespace LogStreamer
 
         public void SinkDisposed(ulong wsId)
         {
-            LogStreamer sink;
+            LogStreamerSession sink;
             _children.TryRemove(wsId, out sink);
         }
 
@@ -174,7 +174,7 @@ namespace LogStreamer
         {
             try
             {
-                LogStreamer child;
+                LogStreamerSession child;
                 if (_children.TryGetValue(ws.ToUInt64(), out child))
                 {
                     child.Input.Enqueue(data);
