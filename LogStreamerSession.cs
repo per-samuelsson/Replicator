@@ -11,7 +11,15 @@ using Starcounter.TransactionLog;
 
 namespace LogStreamer
 {
-    public sealed class LogStreamerSession : IDisposable, ILogStreamerState
+    public enum RunState
+    {
+        Created,
+        Starting,
+        Running,
+        Stopping
+    };
+
+    public sealed class LogStreamerSession : IDisposable
     {
         public const char TableIdSeparator = ':';
 

@@ -65,9 +65,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Database.cs" />
     <Compile Include="IOperationFilter.cs" />
     <Compile Include="HttpHandlers.cs" />
-    <Compile Include="ILogStreamerState.cs" />
     <Compile Include="IWebSocketSender.cs" />
     <Compile Include="LogStreamerOptions.cs" />
     <Compile Include="Partials\Home.json.cs">
